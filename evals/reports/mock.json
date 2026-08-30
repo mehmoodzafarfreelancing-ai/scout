@@ -1,0 +1,285 @@
+{
+  "provider": "mock",
+  "model": "rule-based-v1",
+  "run_at": "2026-08-30T15:05:49.742Z",
+  "overall": 0.9312169312169313,
+  "fieldScores": {
+    "award": 0.8333333333333334,
+    "deadline": 1,
+    "disciplines": 0.9206349206349208,
+    "funder": 0.8333333333333334,
+    "status": 1,
+    "summary": 1
+  },
+  "counts": {
+    "graded": 6,
+    "hallucinated": 1
+  },
+  "results": [
+    {
+      "fixture": "nsf__cise-core-2026",
+      "outcome": "graded",
+      "confidence": 0.5,
+      "grades": [
+        {
+          "field": "funder",
+          "score": 1,
+          "expected": "National Science Foundation",
+          "got": "National Science Foundation"
+        },
+        {
+          "field": "deadline",
+          "score": 1,
+          "expected": "2026-11-18",
+          "got": "2026-11-18"
+        },
+        {
+          "field": "status",
+          "score": 1,
+          "expected": "open",
+          "got": "open"
+        },
+        {
+          "field": "award",
+          "score": 0.6666666666666666,
+          "expected": "250000–1200000 USD",
+          "got": "250000–95000000 USD"
+        },
+        {
+          "field": "disciplines",
+          "score": 0.8571428571428571,
+          "expected": "computer science, engineering, mathematics, robotics",
+          "got": "mathematics, engineering, robotics"
+        },
+        {
+          "field": "summary",
+          "score": 1,
+          "expected": "≥60 chars",
+          "got": "579 chars"
+        }
+      ]
+    },
+    {
+      "fixture": "nsf__climate-observatory",
+      "outcome": "graded",
+      "confidence": 0.55,
+      "grades": [
+        {
+          "field": "funder",
+          "score": 1,
+          "expected": "National Science Foundation",
+          "got": "National Science Foundation"
+        },
+        {
+          "field": "deadline",
+          "score": 1,
+          "expected": "2026-09-14",
+          "got": "2026-09-14"
+        },
+        {
+          "field": "status",
+          "score": 1,
+          "expected": "open",
+          "got": "open"
+        },
+        {
+          "field": "award",
+          "score": 1,
+          "expected": "4000000–20000000 USD",
+          "got": "4000000–20000000 USD"
+        },
+        {
+          "field": "disciplines",
+          "score": 1,
+          "expected": "climate, chemistry, materials science, engineering, physics",
+          "got": "chemistry, physics, engineering, climate, materials science"
+        },
+        {
+          "field": "summary",
+          "score": 1,
+          "expected": "≥60 chars",
+          "got": "498 chars"
+        }
+      ]
+    },
+    {
+      "fixture": "ukri__discovery-fellowship",
+      "outcome": "graded",
+      "confidence": 0.55,
+      "grades": [
+        {
+          "field": "funder",
+          "score": 1,
+          "expected": "UK Research and Innovation",
+          "got": "UKRI"
+        },
+        {
+          "field": "deadline",
+          "score": 1,
+          "expected": "2026-10-22",
+          "got": "2026-10-22"
+        },
+        {
+          "field": "status",
+          "score": 1,
+          "expected": "open",
+          "got": "open"
+        },
+        {
+          "field": "award",
+          "score": 1,
+          "expected": "400000–1200000 GBP",
+          "got": "400000–1200000 GBP"
+        },
+        {
+          "field": "disciplines",
+          "score": 1,
+          "expected": "biology, medicine, neuroscience, genomics",
+          "got": "biology, medicine, neuroscience, genomics"
+        },
+        {
+          "field": "summary",
+          "score": 1,
+          "expected": "≥60 chars",
+          "got": "359 chars"
+        }
+      ]
+    },
+    {
+      "fixture": "ukri__data-science-network",
+      "outcome": "graded",
+      "confidence": 0.55,
+      "grades": [
+        {
+          "field": "funder",
+          "score": 1,
+          "expected": "UK Research and Innovation",
+          "got": "UKRI"
+        },
+        {
+          "field": "deadline",
+          "score": 1,
+          "expected": "—",
+          "got": "—"
+        },
+        {
+          "field": "status",
+          "score": 1,
+          "expected": "rolling",
+          "got": "rolling"
+        },
+        {
+          "field": "award",
+          "score": 0.6666666666666666,
+          "expected": "—–750000 GBP",
+          "got": "750000–750000 GBP"
+        },
+        {
+          "field": "disciplines",
+          "score": 1,
+          "expected": "computer science, mathematics, economics, psychology, energy",
+          "got": "mathematics, computer science, economics, psychology, energy"
+        },
+        {
+          "field": "summary",
+          "score": 1,
+          "expected": "≥60 chars",
+          "got": "384 chars"
+        }
+      ]
+    },
+    {
+      "fixture": "wellcome__mental-health-award",
+      "outcome": "graded",
+      "confidence": 0.45,
+      "grades": [
+        {
+          "field": "funder",
+          "score": 1,
+          "expected": "Wellcome Trust",
+          "got": "Wellcome Trust"
+        },
+        {
+          "field": "deadline",
+          "score": 1,
+          "expected": "2026-12-09",
+          "got": "2026-12-09"
+        },
+        {
+          "field": "status",
+          "score": 1,
+          "expected": "open",
+          "got": "open"
+        },
+        {
+          "field": "award",
+          "score": 1,
+          "expected": "150000–3000000 GBP",
+          "got": "150000–3000000 GBP"
+        },
+        {
+          "field": "disciplines",
+          "score": 1,
+          "expected": "neuroscience, psychology",
+          "got": "neuroscience, psychology"
+        },
+        {
+          "field": "summary",
+          "score": 1,
+          "expected": "≥60 chars",
+          "got": "323 chars"
+        }
+      ]
+    },
+    {
+      "fixture": "wellcome__closed-archive",
+      "outcome": "graded",
+      "confidence": 0.4,
+      "grades": [
+        {
+          "field": "funder",
+          "score": 0,
+          "expected": "Wellcome Trust",
+          "got": "Unknown funder"
+        },
+        {
+          "field": "deadline",
+          "score": 1,
+          "expected": "2024-05-30",
+          "got": "2024-05-30"
+        },
+        {
+          "field": "status",
+          "score": 1,
+          "expected": "closed",
+          "got": "closed"
+        },
+        {
+          "field": "award",
+          "score": 0.6666666666666666,
+          "expected": "—–2500000 GBP",
+          "got": "2500000–2500000 GBP"
+        },
+        {
+          "field": "disciplines",
+          "score": 0.6666666666666666,
+          "expected": "climate, medicine",
+          "got": "climate"
+        },
+        {
+          "field": "summary",
+          "score": 1,
+          "expected": "≥60 chars",
+          "got": "323 chars"
+        }
+      ]
+    },
+    {
+      "fixture": "nsf__listing-index",
+      "outcome": "hallucinated",
+      "confidence": 0.55,
+      "grades": [],
+      "detail": "claimed Find Funding"
+    }
+  ]
+}

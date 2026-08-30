@@ -49,6 +49,11 @@ export class FixtureScraper implements Scraper {
     const files = await readdir(this.dir).catch(() => [] as string[]);
     return files
       .filter((f) => f.endsWith(".html") && f.startsWith(`${source}__`))
+      // Mirrors what `selectCandidates` does for live crawls: a listing page is
+      // not a detail page. Live sources exclude them by URL pattern; fixtures
+      // do it by name, so `-index` fixtures stay available to the eval (which
+      // addresses them directly) without polluting the ingested corpus.
+      .filter((f) => !/-index\.html$/.test(f))
       .map((f) => `fixture://${f.replace(/\.html$/, "")}`);
   }
 }

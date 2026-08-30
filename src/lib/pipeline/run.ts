@@ -5,6 +5,7 @@ import { createLlmClient, extractStructured } from "@/lib/llm";
 import { createScraper, exaSearch, type Scraper } from "@/lib/scrape";
 import { contentHash, opportunityId, runId } from "./ids";
 import { scoreAll } from "./match";
+import { MIN_CONFIDENCE, MIN_PAGE_CHARS } from "./thresholds";
 import { SOURCES, selectCandidates, sourceById, type Source } from "./sources";
 
 export type RunOptions = {
@@ -18,11 +19,6 @@ export type RunOptions = {
 };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-/** Pages below this are almost certainly index/news pages, not real calls. */
-const MIN_CONFIDENCE = 0.4;
-/** Below this a page has no extractable content; don't spend a call on it. */
-const MIN_PAGE_CHARS = 400;
 
 export async function runIngest(opts: RunOptions): Promise<IngestRun> {
   const repo = await getWriteRepo();

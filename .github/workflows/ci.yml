@@ -40,4 +40,10 @@ jobs:
             console.log('pipeline smoke test ok: ' + n + ' opportunities');
           "
 
+      # Informational: the rule-based baseline is expected to hallucinate on an
+      # index page. That failure is the documented finding, not a broken build,
+      # so this runs without --strict. Gate a real model with `-- --strict`.
+      - name: Extraction eval (baseline)
+        run: npm run eval:baseline
+
       - run: npm run build

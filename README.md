@@ -122,6 +122,58 @@ curl -X POST localhost:3000/api/webhooks/refresh \
   -H 'content-type: application/json' -d "$BODY"
 ```
 
+## Evaluation
+
+`npm run eval` scores an extractor against
+[hand-labelled fixtures](evals/labels.json), field by field, so "the model
+beats the baseline" is a number rather than a claim. Both extractors see the
+same pages and the same grader, and the eval imports the pipeline's own
+accept/reject thresholds rather than restating them — an eval that grades a
+different accept path measures a system nobody is running.
+
+The checked-in baseline (`npm run eval:baseline`, rule-based, no API key):
+
+```
+  field         score
+  ─────────────────────────────────────────────
+  award         █████████████████···  83%
+  deadline      ████████████████████ 100%
+  disciplines   ██████████████████··  92%
+  funder        █████████████████···  83%
+  status        ████████████████████ 100%
+  summary       ████████████████████ 100%
+  ─────────────────────────────────────────────
+  overall       ███████████████████·  93%
+
+  pages: 6 graded · 1 hallucinated
+```
+
+Grading choices worth knowing: funders are graded on identity, not string
+equality, so "NSF" scores against "National Science Foundation"; disciplines
+are set F1, which rewards recall without letting a scattergun win; award min
+and max score separately, because reading the ceiling but missing the floor is
+a partial success; amounts pass within 1%. Summary prose is only checked for
+presence — grading its quality needs a judge model, and pretending otherwise
+would be dishonest arithmetic.
+
+**What the eval found.** 93% flatters the baseline, because the interesting
+failures are the ones a single number hides:
+
+- **It cannot tell a directory from a call.** Given NSF's "Find Funding" index
+  page — 1,500 characters, no length gate to save it — the baseline confidently
+  emits a record titled *Find Funding*. Nothing in a regex can distinguish
+  "this page lists opportunities" from "this page is one".
+- **It reads the programme budget as the award ceiling.** On the CISE fixture
+  it returns `$250k–$95M`; the $95M is what NSF will award in total across ~180
+  grants. Telling those apart requires reading the sentence, not the number.
+- **It gives up on funders it hasn't been told about.** `Unknown funder` on the
+  Wellcome archive page, because the name appears in a form the pattern list
+  doesn't carry.
+
+Those three are the argument for the model's cost, stated as measurements. Run
+`npm run eval` with a `GEMINI_API_KEY` set and the reports in `evals/reports/`
+are directly diffable.
+
 ## Tests
 
 ```bash
@@ -138,18 +190,21 @@ the build rather than the next crawl.
 
 ## Known limits
 
-- **The heuristic extractor is a floor, not a product.** On the NSF fixture it
-  reads the programme's total budget as the individual award ceiling —
-  `$250k–$95M`. Distinguishing "we will award $95M in total" from "your award
-  may reach $1.2M" needs the language model; that gap is the clearest argument
-  for the cost, and it's why the baseline is checked in rather than hidden.
-- **No eval harness yet.** The next thing I'd build: label ~50 real pages, then
-  score both extractors against them per field. Without that, "the LLM is
-  better" is an assertion.
-- **Scoring has no learning signal.** Weights are hand-set. Click-through or
-  saved-opportunity data would let them be fitted rather than guessed.
+- **Seven labelled pages is a smoke test, not a benchmark.** The harness is
+  real; the sample is small enough that one page moves a field score by 17
+  points. Scaling to ~50 labelled live pages is the next thing I would do, and
+  it is a labelling problem rather than an engineering one.
+- **Summary quality is unmeasured.** The grader checks that a summary exists.
+  Scoring whether it is *accurate* needs a judge model, which is the natural
+  second use of the LLM budget.
+- **Scoring has no learning signal.** Match weights are hand-set. Click-through
+  or saved-opportunity data would let them be fitted rather than guessed.
 - **Three sources.** The registry is built to grow; the crawl budget and the
   free-tier ceilings are what actually cap it.
+- **Fixtures are synthetic.** They are written to exercise the edges — a closed
+  archive, a rolling call, a two-date solicitation, an index page — not scraped
+  from the funders. Real pages are messier, and the eval numbers will drop when
+  they meet them.
 
 ## Stack
 

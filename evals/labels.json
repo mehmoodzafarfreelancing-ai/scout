@@ -1,0 +1,76 @@
+{
+  "$comment": [
+    "Hand-labelled ground truth for the bundled fixtures.",
+    "",
+    "Labels record what a careful human reading the page would write down, not",
+    "what any particular extractor happens to produce. Where a page states more",
+    "than one date, the label is the one an applicant must actually meet.",
+    "",
+    "'funder_accept' lists the surface forms that should count as correct, so a",
+    "model answering 'NSF' is not marked wrong against 'National Science",
+    "Foundation'. Grading identity, not string equality."
+  ],
+  "cases": [
+    {
+      "fixture": "nsf__cise-core-2026",
+      "should_extract": true,
+      "funder_accept": ["National Science Foundation", "NSF"],
+      "deadline": "2026-11-18",
+      "status": "open",
+      "award": { "min": 250000, "max": 1200000, "currency": "USD" },
+      "award_note": "The $95,000,000 on the page is the programme total, not an award ceiling. Getting this right is the clearest thing that separates a language model from a number-grabbing regex.",
+      "disciplines": ["computer science", "engineering", "mathematics", "robotics"]
+    },
+    {
+      "fixture": "nsf__climate-observatory",
+      "should_extract": true,
+      "funder_accept": ["National Science Foundation", "NSF"],
+      "deadline": "2026-09-14",
+      "deadline_note": "Preliminary proposal date. The March 2027 full-proposal date is invitation-only and cannot be met directly.",
+      "status": "open",
+      "award": { "min": 4000000, "max": 20000000, "currency": "USD" },
+      "disciplines": ["climate", "chemistry", "materials science", "engineering", "physics"]
+    },
+    {
+      "fixture": "ukri__discovery-fellowship",
+      "should_extract": true,
+      "funder_accept": ["UK Research and Innovation", "UKRI"],
+      "deadline": "2026-10-22",
+      "status": "open",
+      "award": { "min": 400000, "max": 1200000, "currency": "GBP" },
+      "disciplines": ["biology", "medicine", "neuroscience", "genomics"]
+    },
+    {
+      "fixture": "ukri__data-science-network",
+      "should_extract": true,
+      "funder_accept": ["UK Research and Innovation", "UKRI"],
+      "deadline": null,
+      "status": "rolling",
+      "award": { "min": null, "max": 750000, "currency": "GBP" },
+      "disciplines": ["computer science", "mathematics", "economics", "psychology", "energy"]
+    },
+    {
+      "fixture": "wellcome__mental-health-award",
+      "should_extract": true,
+      "funder_accept": ["Wellcome Trust", "Wellcome"],
+      "deadline": "2026-12-09",
+      "status": "open",
+      "award": { "min": 150000, "max": 3000000, "currency": "GBP" },
+      "disciplines": ["neuroscience", "psychology"]
+    },
+    {
+      "fixture": "wellcome__closed-archive",
+      "should_extract": true,
+      "funder_accept": ["Wellcome Trust", "Wellcome"],
+      "deadline": "2024-05-30",
+      "status": "closed",
+      "award": { "min": null, "max": 2500000, "currency": "GBP" },
+      "disciplines": ["climate", "medicine"]
+    },
+    {
+      "fixture": "nsf__listing-index",
+      "should_extract": false,
+      "reject_note": "A directory of links, not a funding call. An extractor that confidently invents a record here is worse than one that returns nothing."
+    }
+  ]
+}
