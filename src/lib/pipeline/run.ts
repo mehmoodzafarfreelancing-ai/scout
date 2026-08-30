@@ -6,7 +6,15 @@ import { createScraper, type Scraper } from "@/lib/scrape";
 import { computeGaps } from "./gaps";
 import { contentHash, runId, studyId } from "./ids";
 import { fixtureSources } from "./fixture-source";
-import { SOURCES, TRACKED_CONDITIONS, enrich, sourceById, type Source, type SourceDocument } from "./sources";
+import {
+  SOURCES,
+  SOUTH_ASIA,
+  TRACKED_CONDITIONS,
+  enrich,
+  sourceById,
+  type Source,
+  type SourceDocument,
+} from "./sources";
 import { MIN_CONFIDENCE, MIN_RECORD_CHARS } from "./thresholds";
 
 export type RunOptions = {
@@ -65,19 +73,34 @@ export async function runIngest(opts: RunOptions): Promise<IngestRun> {
       for (const condition of conditions) {
         if (budget <= 0) break;
 
-        let documents: SourceDocument[];
-        try {
-          documents = await source.collect({ query: condition, limit: opts.perCondition ?? 6 });
-        } catch (err) {
-          run.errors.push(`${source.id}/${condition}: ${String(err).slice(0, 160)}`);
-          continue;
+        // Two passes. The broad one shows what the literature looks like; the
+        // region-targeted one finds work that would never rank highly enough to
+        // appear in it. Comparing them is the whole analysis.
+        const passes: { region?: string[] }[] = [{}, { region: SOUTH_ASIA }];
+        const documents: SourceDocument[] = [];
+        const seenRefs = new Set<string>();
+
+        for (const pass of passes) {
+          try {
+            const found = await source.collect({
+              query: condition,
+              limit: opts.perCondition ?? 6,
+              ...pass,
+            });
+            for (const doc of found) {
+              // The same trial answers both passes. Keeping it twice would
+              // double-count it in the gap arithmetic.
+              if (seenRefs.has(doc.ref)) continue;
+              seenRefs.add(doc.ref);
+              documents.push(doc);
+            }
+          } catch (err) {
+            run.errors.push(`${source.id}/${condition}: ${String(err).slice(0, 160)}`);
+          }
+          if (!offline) await sleep(config.scrape.delayMs);
         }
 
         console.log(`[ingest] ${source.id} · ${condition}: ${documents.length} record(s)`);
-        // Public research APIs are free and generous, and still deserve a pause
-        // between calls. Being rate-limited out of a nightly job is a
-        // correctness problem before it is a manners problem.
-        if (!offline) await sleep(config.scrape.delayMs);
 
         for (const doc of documents) {
           if (budget <= 0) {

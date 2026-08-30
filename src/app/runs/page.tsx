@@ -37,8 +37,9 @@ export default async function RunsPage() {
                 <th className="px-4 py-2.5 font-medium">Started</th>
                 <th className="px-4 py-2.5 font-medium">Trigger</th>
                 <th className="px-4 py-2.5 font-medium">Providers</th>
-                <th className="px-4 py-2.5 text-right font-medium">Fetched</th>
+                <th className="px-4 py-2.5 text-right font-medium">Seen</th>
                 <th className="px-4 py-2.5 text-right font-medium">Skipped</th>
+                <th className="px-4 py-2.5 text-right font-medium">Enriched</th>
                 <th className="px-4 py-2.5 text-right font-medium">Extracted</th>
                 <th className="px-4 py-2.5 text-right font-medium">Rejected</th>
                 <th className="px-4 py-2.5 text-right font-medium">Took</th>
@@ -64,9 +65,12 @@ export default async function RunsPage() {
                       <br />
                       {r.llm_provider}
                     </td>
-                    <td className="nums px-4 py-3 text-right">{r.pages_fetched}</td>
+                    <td className="nums px-4 py-3 text-right">{r.records_seen}</td>
                     <td className="nums px-4 py-3 text-right" style={{ color: "var(--text-dim)" }}>
-                      {r.pages_skipped}
+                      {r.records_skipped}
+                    </td>
+                    <td className="nums px-4 py-3 text-right" style={{ color: "var(--text-dim)" }}>
+                      {r.enriched}
                     </td>
                     <td className="nums px-4 py-3 text-right font-medium">{r.extracted}</td>
                     <td

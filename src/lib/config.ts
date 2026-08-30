@@ -57,7 +57,6 @@ export const config = {
   scrape: {
     provider: resolveScrape(),
     firecrawlKey: env("FIRECRAWL_API_KEY"),
-    exaKey: env("EXA_API_KEY"),
     /** Politeness: never hammer a source we do not own. */
     delayMs: Number(env("SCRAPE_DELAY_MS") ?? 1200),
     timeoutMs: Number(env("SCRAPE_TIMEOUT_MS") ?? 30_000),
@@ -84,6 +83,5 @@ export function activeStack() {
     scrape: config.scrape.provider,
     llm: config.llm.provider,
     store: config.store.provider,
-    exa: config.scrape.exaKey ? "enabled" : "disabled",
   };
 }

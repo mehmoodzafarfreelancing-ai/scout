@@ -5,7 +5,6 @@ import { FixtureScraper } from "./fixture-provider";
 import { ScrapeError, type ScrapedPage, type Scraper } from "./types";
 
 export * from "./types";
-export { exaSearch } from "./exa";
 
 function build(kind: ScrapeProvider): Scraper {
   switch (kind) {

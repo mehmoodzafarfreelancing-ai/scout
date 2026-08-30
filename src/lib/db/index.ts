@@ -2,7 +2,7 @@ import { config } from "@/lib/config";
 import type { Repo } from "./repo";
 
 export * from "./types";
-export type { Repo, OpportunityFilter } from "./repo";
+export type { Repo, StudyFilter } from "./repo";
 
 let readCache: Repo | null = null;
 

@@ -4,123 +4,174 @@ import type { CompletionRequest, CompletionResult, LlmClient } from "./types";
  * A deterministic, rule-based stand-in for a real model.
  *
  * Two jobs. First, it lets the whole pipeline run with zero API keys, so the
- * repo is clonable and CI is free. Second — and more usefully — it is the
- * baseline the real extractor is measured against: if a 70B model can't beat
- * these regexes on the eval set, the model isn't earning its latency.
+ * repo is clonable and CI is free. Second, and more usefully, it is the
+ * baseline the real extractor is measured against. If a 70B model cannot beat
+ * these rules on the eval set, the model is not earning its latency.
+ *
+ * Expect it to do well on ClinicalTrials.gov, where the fields it needs are
+ * already labelled, and badly on Europe PMC, where the population exists only
+ * in prose. That split is the point: pattern matching handles data someone has
+ * already structured, and falls over exactly where reading starts.
  */
 
-const MONTHS: Record<string, number> = {
-  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
-  jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+/**
+ * Kept identical to the list in the extraction prompt.
+ *
+ * If these two drift, the baseline and the model are being graded against
+ * different definitions of the same word, and the comparison means nothing.
+ */
+const SOUTH_ASIAN = [
+  "pakistan",
+  "india",
+  "bangladesh",
+  "sri lanka",
+  "nepal",
+  "bhutan",
+  "maldives",
+];
+
+/** Cities big enough that a record naming one is naming a country. */
+const SOUTH_ASIAN_CITIES = [
+  "karachi",
+  "lahore",
+  "islamabad",
+  "rawalpindi",
+  "peshawar",
+  "dhaka",
+  "delhi",
+  "mumbai",
+  "chennai",
+  "kolkata",
+  "bengaluru",
+  "bangalore",
+  "hyderabad",
+  "colombo",
+  "kathmandu",
+];
+
+const field = (text: string, label: string): string | null => {
+  const m = new RegExp(`^${label}:\\s*(.+)$`, "im").exec(text);
+  const value = m?.[1]?.trim();
+  return !value || /^not stated$/i.test(value) || /^not available$/i.test(value) ? null : value;
 };
 
-/** Cue words that tend to precede the date that actually matters. */
-const DEADLINE_CUES = /deadline|clos(?:e|es|ed|ing)|due|submission|apply by/gi;
+export function guessCountries(text: string): string[] {
+  const stated = field(text, "Recruitment countries");
+  if (stated) {
+    return [...new Set(stated.split(";").map((c) => c.trim()).filter(Boolean))].slice(0, 30);
+  }
+  return [];
+}
 
-function firstDateIn(scope: string): string | null {
-  const iso = /\b(\d{4})-(\d{2})-(\d{2})\b/.exec(scope);
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
-
-  const long = /\b(\d{1,2})\s+([a-z]{3})[a-z]*\.?,?\s+(\d{4})\b/i.exec(scope);
-  if (long) {
-    const m = MONTHS[long[2]!.toLowerCase()];
-    if (m) return `${long[3]}-${String(m).padStart(2, "0")}-${long[1]!.padStart(2, "0")}`;
+export function guessRepresentation(
+  countries: string[],
+  text: string,
+): "none" | "partial" | "primary" | "unclear" {
+  if (countries.length > 0) {
+    const hits = countries.filter((c) => SOUTH_ASIAN.includes(c.toLowerCase().trim()));
+    if (hits.length === 0) return "none";
+    // Every listed site in the region means the study is about that population.
+    // A single site among many means it is a slice of a wider cohort.
+    return hits.length === countries.length ? "primary" : "partial";
   }
 
-  const us = /\b([a-z]{3})[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4})\b/i.exec(scope);
-  if (us) {
-    const m = MONTHS[us[1]!.toLowerCase()];
-    if (m) return `${us[3]}-${String(m).padStart(2, "0")}-${us[2]!.padStart(2, "0")}`;
+  // No country list. Fall back to looking for the region in the prose, which is
+  // where this approach starts guessing rather than reading.
+  const lower = text.toLowerCase();
+  const mentioned =
+    SOUTH_ASIAN.some((c) => lower.includes(c)) || SOUTH_ASIAN_CITIES.some((c) => lower.includes(c));
+
+  // Deliberately "unclear" rather than "none". A record that did not say is not
+  // a record that said no, and collapsing the two is the single worst error
+  // this pipeline can make.
+  return mentioned ? "partial" : "unclear";
+}
+
+export function guessStudyType(text: string): string {
+  const declared = field(text, "Study type") ?? field(text, "Publication type") ?? "";
+  const lower = declared.toLowerCase();
+
+  if (/interventional/.test(lower)) return "interventional";
+  if (/observational|cohort|cross-sectional|case-control/.test(lower)) return "observational";
+  if (/review|meta-analysis/.test(lower)) return "review";
+  if (/case report/.test(lower)) return "case-report";
+
+  const body = text.toLowerCase();
+  if (/randomi[sz]ed|placebo|double-blind/.test(body)) return "interventional";
+  if (/systematic review|meta-analysis/.test(body)) return "review";
+  if (/cohort|cross-sectional|observational/.test(body)) return "observational";
+  return "other";
+}
+
+export function guessSampleSize(text: string): number | null {
+  const enrolment = field(text, "Enrollment");
+  if (enrolment) {
+    const n = Number(enrolment.replace(/[^\d]/g, ""));
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+
+  // Abstracts phrase it a dozen ways. These two carry most of them.
+  const patterns = [
+    /\b(?:n\s*=\s*|enrolled\s+|recruited\s+|included\s+)(\d[\d,]{1,7})\b/i,
+    /\b(\d[\d,]{1,7})\s+(?:patients|participants|subjects|women|children|adults)\b/i,
+  ];
+  for (const re of patterns) {
+    const n = Number(re.exec(text)?.[1]?.replace(/,/g, ""));
+    if (Number.isFinite(n) && n > 0) return n;
   }
   return null;
 }
 
-/**
- * Find the submission deadline.
- *
- * Anchoring on the *first* cue word is wrong: pages say "this scheme is closed"
- * or "eight years before the closing date" long before they state the real
- * date. So every cue gets its own window, and only if none of them contains a
- * date do we fall back to scanning the whole page.
- */
-export function guessDeadline(text: string): string | null {
-  for (const cue of text.matchAll(DEADLINE_CUES)) {
-    const found = firstDateIn(text.slice(cue.index, cue.index + 220));
-    if (found) return found;
-  }
-  return firstDateIn(text);
+export function guessYear(text: string): number | null {
+  const stated = field(text, "Publication year") ?? field(text, "Start date");
+  const year = Number(stated?.slice(0, 4));
+  if (Number.isFinite(year) && year >= 1900 && year <= 2100) return year;
+  return null;
 }
-
-export function guessAward(text: string) {
-  const cur = /£/.test(text) ? "GBP" : /€/.test(text) ? "EUR" : "USD";
-  const nums = [...text.matchAll(/[$£€]\s?([\d,]+(?:\.\d+)?)\s*(million|m|k)?/gi)]
-    .map((m) => {
-      const base = Number(m[1]!.replace(/,/g, ""));
-      const unit = m[2]?.toLowerCase();
-      if (!Number.isFinite(base)) return null;
-      return unit === "million" || unit === "m" ? base * 1e6 : unit === "k" ? base * 1e3 : base;
-    })
-    .filter((n): n is number => n !== null && n >= 500);
-
-  if (nums.length === 0) return null;
-  return { min: Math.min(...nums), max: Math.max(...nums), currency: cur };
-}
-
-const DISCIPLINES = [
-  "biology", "chemistry", "physics", "mathematics", "computer science",
-  "engineering", "medicine", "neuroscience", "climate", "materials science",
-  "economics", "psychology", "genomics", "robotics", "energy",
-];
 
 export class MockLlmClient implements LlmClient {
   readonly name = "mock";
-  readonly model = "rule-based-v1";
+  readonly model = "rule-based-v2";
 
   async complete(req: CompletionRequest): Promise<CompletionResult> {
-    // The pipeline passes the page as "TITLE:\n...\n\nCONTENT:\n..."
-    const title = /TITLE:\s*\n(.+)/.exec(req.user)?.[1]?.trim() ?? "Untitled opportunity";
+    const title = /TITLE:\s*\n(.+)/.exec(req.user)?.[1]?.trim() ?? "Untitled record";
     const body = req.user.split("CONTENT:").at(-1) ?? req.user;
-    const lower = body.toLowerCase();
 
-    const funder =
-      /(National Science Foundation|National Institutes of Health|Wellcome Trust|Wellcome|UKRI|UK Research and Innovation|European Research Council|Horizon Europe|NSF|NIH|ERC)/i.exec(
-        body,
-      )?.[1] ?? "Unknown funder";
+    const countries = guessCountries(body);
+    const representation = guessRepresentation(countries, body);
 
-    const sentences = body
+    const condition =
+      field(body, "Condition\\(s\\)")?.split(";")[0]?.trim().toLowerCase() ??
+      title.split(/[:,]/)[0]!.trim().toLowerCase().slice(0, 160);
+
+    const interventions = field(body, "Interventions");
+    const abstract = field(body, "Abstract") ?? "";
+
+    const sentences = (abstract || body)
       .split(/(?<=[.!?])\s+/)
       .map((s) => s.replace(/\s+/g, " ").trim())
       .filter((s) => s.length > 40);
 
-    const summary = (sentences.slice(0, 3).join(" ") || body.slice(0, 200)).slice(0, 1100);
-    const disciplines = DISCIPLINES.filter((d) => lower.includes(d)).slice(0, 12);
-    const deadline = guessDeadline(body);
-
-    const status = /closed|no longer accepting/i.test(lower)
-      ? "closed"
-      : /rolling|continuous submission|no deadline/i.test(lower)
-        ? "rolling"
-        : deadline
-          ? "open"
-          : "unknown";
-
-    const eligibility =
-      /eligibilit(?:y|ies)[:\s]([\s\S]{0,400})/i.exec(body)?.[1]?.replace(/\s+/g, " ").trim() ??
-      null;
+    const populationNote =
+      countries.length > 0
+        ? `Recruited in ${countries.join(", ")}.`
+        : (sentences.find((s) => /patient|participant|adult|child|women|cohort|enrolled/i.test(s)) ??
+          "The record does not describe the population.");
 
     return {
       text: JSON.stringify({
-        title: title.slice(0, 300),
-        funder,
-        programme: null,
-        summary: summary.length >= 20 ? summary : `${summary} (insufficient page text)`,
-        disciplines,
-        eligibility,
-        award: guessAward(body),
-        deadline,
-        status,
-        // Honest about being a heuristic: never claims high confidence.
-        confidence: Number((0.35 + Math.min(disciplines.length, 4) * 0.05).toFixed(2)),
+        title: title.slice(0, 400),
+        condition: condition.length >= 2 ? condition : "unspecified",
+        intervention: interventions && interventions !== "none" ? interventions.slice(0, 200) : null,
+        study_type: guessStudyType(body),
+        sample_size: guessSampleSize(body),
+        countries,
+        population_note: populationNote.slice(0, 500).padEnd(10, "."),
+        representation,
+        year: guessYear(body),
+        // Honest about being a heuristic. Highest when the record handed it a
+        // country list, lowest when it had to guess from prose.
+        confidence: Number((countries.length > 0 ? 0.62 : 0.44).toFixed(2)),
       }),
       model: this.model,
       usage: null,

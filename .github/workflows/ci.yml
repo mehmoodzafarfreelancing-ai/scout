@@ -29,15 +29,33 @@ jobs:
       - name: Pipeline smoke test
         run: npm run ingest:fixtures
 
-      - name: Assert the run actually stored something
+      - name: Assert the run actually stored something coherent
         run: |
           node -e "
             const s = require('./.data/store.json');
-            const n = s.opportunities.length;
-            if (n < 5) { console.error('expected >= 5 opportunities, got ' + n); process.exit(1); }
-            const undated = s.opportunities.filter(o => o.status === 'open' && !o.deadline);
-            if (undated.length) { console.error('open rows with no deadline: ' + undated.length); process.exit(1); }
-            console.log('pipeline smoke test ok: ' + n + ' opportunities');
+            const n = s.studies.length;
+            if (n < 50) { console.error('expected >= 50 studies, got ' + n); process.exit(1); }
+
+            // Every stored row must carry a representation the schema allows.
+            const bad = s.studies.filter(x => !['none','partial','primary','unclear'].includes(x.representation));
+            if (bad.length) { console.error('invalid representation on ' + bad.length + ' rows'); process.exit(1); }
+
+            // A row claiming a South Asian recruiting country must not also be
+            // marked 'none'. That combination is the analysis inverting itself.
+            const SA = ['pakistan','india','bangladesh','sri lanka','nepal','bhutan','maldives'];
+            const contradictory = s.studies.filter(x =>
+              x.representation === 'none' && x.countries.some(c => SA.includes(String(c).toLowerCase())));
+            if (contradictory.length) {
+              console.error('rows marked none despite a South Asian site: ' + contradictory.length);
+              process.exit(1);
+            }
+
+            // Gaps must be derived from the rows, not left stale.
+            if (!s.gaps.length) { console.error('no gaps computed'); process.exit(1); }
+            const total = s.gaps.reduce((a, g) => a + g.total_studies, 0);
+            if (total !== n) { console.error('gap counts (' + total + ') do not sum to studies (' + n + ')'); process.exit(1); }
+
+            console.log('pipeline smoke test ok: ' + n + ' studies, ' + s.gaps.length + ' conditions');
           "
 
       # Informational: the rule-based baseline is expected to hallucinate on an

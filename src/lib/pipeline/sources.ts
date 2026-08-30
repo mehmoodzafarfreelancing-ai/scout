@@ -30,7 +30,26 @@ export type CollectContext = {
   /** Health condition to search for. */
   query: string;
   limit: number;
+  /**
+   * Restrict to studies recruiting in these countries.
+   *
+   * A broad query alone under-counts regional work, because a trial run in
+   * Karachi competes for ranking with ten thousand trials run elsewhere and
+   * simply never surfaces. Real gap analysis has to ask both questions: what
+   * does the literature look like, and what does it look like here. The
+   * pipeline runs both passes and the difference is the finding.
+   */
+  region?: string[];
 };
+
+/** The countries the analysis is about. Used for region-targeted queries. */
+export const SOUTH_ASIA = [
+  "Pakistan",
+  "India",
+  "Bangladesh",
+  "Sri Lanka",
+  "Nepal",
+];
 
 export type Source = {
   id: string;
@@ -64,11 +83,13 @@ export const clinicalTrials: Source = {
   label: "ClinicalTrials.gov",
   kind: "api",
 
-  async collect({ query, limit }): Promise<SourceDocument[]> {
+  async collect({ query, limit, region }): Promise<SourceDocument[]> {
     const url = new URL("https://clinicaltrials.gov/api/v2/studies");
     url.searchParams.set("query.cond", query);
     url.searchParams.set("pageSize", String(Math.min(limit, 100)));
     url.searchParams.set("format", "json");
+    // query.locn filters on recruitment sites, which is the fact we care about.
+    if (region?.length) url.searchParams.set("query.locn", region.join(" OR "));
 
     const res = await fetch(url, {
       headers: { accept: "application/json", "user-agent": UA },
@@ -143,9 +164,16 @@ export const europePmc: Source = {
   label: "Europe PMC",
   kind: "api",
 
-  async collect({ query, limit }): Promise<SourceDocument[]> {
+  async collect({ query, limit, region }): Promise<SourceDocument[]> {
     const url = new URL("https://www.ebi.ac.uk/europepmc/webservices/rest/search");
-    url.searchParams.set("query", query);
+    // Europe PMC has no location facet, so the region has to go in the query
+    // itself. That finds papers that *mention* the country, which is a looser
+    // filter than recruitment; the extractor still has to decide whether the
+    // participants were actually there.
+    url.searchParams.set(
+      "query",
+      region?.length ? `${query} AND (${region.join(" OR ")})` : query,
+    );
     url.searchParams.set("format", "json");
     url.searchParams.set("pageSize", String(Math.min(limit, 100)));
     url.searchParams.set("resultType", "core");

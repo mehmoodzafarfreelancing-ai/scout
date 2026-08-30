@@ -1,228 +1,178 @@
 import Link from "next/link";
 import { getRepo } from "@/lib/db";
-import type { Match } from "@/lib/db/types";
-import { SOURCES } from "@/lib/pipeline/sources";
-import { Award, Confidence, Deadline, Empty, StatusDot, Tag } from "./ui";
+import { explainGap } from "@/lib/pipeline/gaps";
+import { Empty, GapBar } from "./ui";
 
 // Always reflect the latest ingest rather than a build-time snapshot.
 export const dynamic = "force-dynamic";
 
-type Search = {
-  q?: string;
-  source?: string;
-  status?: string;
-  discipline?: string;
-  profile?: string;
-};
-
-export default async function Home({ searchParams }: { searchParams: Promise<Search> }) {
-  const params = await searchParams;
+export default async function Home() {
   const repo = await getRepo();
-
-  const [opportunities, profiles] = await Promise.all([
-    repo.listOpportunities({
-      q: params.q,
-      source: params.source,
-      status: params.status,
-      discipline: params.discipline,
-      limit: 200,
-    }),
-    repo.listProfiles(),
+  const [allGaps, studies] = await Promise.all([
+    repo.listGaps(500),
+    repo.listStudies({ limit: 2000 }),
   ]);
 
-  // When a profile is selected the list is re-ordered by relevance rather than
-  // by deadline, because "what should I apply for" beats "what closes soonest".
-  const activeProfile = params.profile ? profiles.find((p) => p.id === params.profile) : undefined;
-  const matches: Map<string, Match> = new Map();
-  if (activeProfile) {
-    for (const m of await repo.listMatches(activeProfile.id, 500)) {
-      matches.set(m.opportunity_id, m);
-    }
-  }
+  // A condition seen once is a naming artefact more often than a finding: the
+  // extractor read a paper title as a condition, or spelled one two ways. They
+  // are kept in the data and counted here, but ranking them next to a condition
+  // with real evidence behind it would be misleading.
+  const gaps = allGaps.filter((g) => g.total_studies > 1);
+  const singletons = allGaps.length - gaps.length;
 
-  const rows = activeProfile
-    ? [...opportunities].sort(
-        (a, b) => (matches.get(b.id)?.score ?? 0) - (matches.get(a.id)?.score ?? 0),
-      )
-    : opportunities;
+  const totals = studies.reduce(
+    (acc, s) => {
+      acc[s.representation]++;
+      return acc;
+    },
+    { primary: 0, partial: 0, none: 0, unclear: 0 },
+  );
 
-  const disciplines = [...new Set(opportunities.flatMap((o) => o.disciplines))].sort();
-  const openCount = rows.filter((o) => o.status === "open" || o.status === "rolling").length;
+  const reached = totals.primary + totals.partial;
+  const known = studies.length - totals.unclear;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Funding opportunities</h1>
-          <p className="mt-1 text-sm" style={{ color: "var(--text-dim)" }}>
-            {rows.length} extracted · {openCount} accepting applications
-            {activeProfile ? ` · ranked for ${activeProfile.name}` : ""}
-          </p>
-        </div>
-      </div>
+    <div className="space-y-8">
+      <header className="max-w-2xl space-y-2">
+        <h1 className="text-2xl font-semibold tracking-tight">Where the evidence does not reach</h1>
+        <p className="text-sm leading-relaxed" style={{ color: "var(--text-dim)" }}>
+          Studies from ClinicalTrials.gov and Europe PMC, read by a language model to work out
+          which population was actually recruited. Conditions are ranked by how much evidence
+          exists against how little of it reached South Asian populations.
+        </p>
+        {/* Stated up front rather than in a footnote. Every number below is a
+            proportion of a deliberately biased sample, and a research
+            organisation reading this will ask within ten seconds. */}
+        <p
+          className="rounded-md border-l-2 py-1 pl-3 text-xs leading-relaxed"
+          style={{ borderColor: "var(--color-urgent)", color: "var(--text-faint)" }}
+        >
+          <strong style={{ color: "var(--text-dim)" }}>Read these as sample proportions, not
+          prevalence.</strong>{" "}
+          Each condition is queried twice, once broadly and once restricted to South Asian
+          recruiting sites. That second pass is what surfaces regional work at all, since a trial
+          in Karachi never out-ranks ten thousand trials run elsewhere. It also means the corpus
+          deliberately over-represents the region, so the percentages here describe what was
+          sampled and are not an estimate of the literature.
+        </p>
+      </header>
 
-      <Filters
-        params={params}
-        disciplines={disciplines}
-        profiles={profiles.map((p) => ({ id: p.id, name: p.name }))}
-      />
-
-      {rows.length === 0 ? (
+      {studies.length === 0 ? (
         <Empty
-          title="Nothing here yet"
-          hint="Run `npm run ingest:fixtures` to populate the store from bundled sample pages, or add API keys to .env.local and run `npm run ingest`."
+          title="Nothing ingested yet"
+          hint="Run `npm run ingest:fixtures` for the offline demo, or add a GEMINI_API_KEY and run `npm run ingest` to pull live records."
         />
       ) : (
-        <div
-          className="overflow-hidden rounded-lg border"
-          style={{ borderColor: "var(--border)", background: "var(--surface)" }}
-        >
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr
-                className="border-b text-[11px] uppercase tracking-wide"
-                style={{ borderColor: "var(--border)", color: "var(--text-faint)" }}
+        <>
+          <dl
+            className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border sm:grid-cols-4"
+            style={{ borderColor: "var(--border)", background: "var(--border)" }}
+          >
+            <Stat label="Studies read" value={studies.length.toLocaleString()} />
+            <Stat
+              label="Conditions"
+              value={String(gaps.length)}
+              note={singletons > 0 ? `${singletons} seen once, not ranked` : undefined}
+            />
+            <Stat
+              label="Reached the region"
+              value={known > 0 ? `${Math.round((reached / known) * 100)}%` : "n/a"}
+              note={known > 0 ? `${reached} of ${known} in this sample` : undefined}
+            />
+            <Stat
+              label="Did not report"
+              value={String(totals.unclear)}
+              note="excluded from the ratio"
+            />
+          </dl>
+
+          <section className="space-y-3">
+            <div className="flex items-baseline justify-between">
+              <h2 className="text-sm font-semibold">Conditions by evidence gap</h2>
+              <Link
+                href="/studies"
+                className="text-sm hover:underline underline-offset-4"
+                style={{ color: "var(--text-dim)" }}
               >
-                <th className="px-4 py-2.5 font-medium">Opportunity</th>
-                <th className="hidden px-4 py-2.5 font-medium sm:table-cell">Award</th>
-                <th className="px-4 py-2.5 font-medium">Closes</th>
-                <th className="hidden px-4 py-2.5 font-medium md:table-cell">
-                  {activeProfile ? "Match" : "Confidence"}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((o) => {
-                const match = matches.get(o.id);
-                return (
-                  <tr
-                    key={o.id}
-                    className="border-b last:border-0 transition-colors hover:bg-black/[0.025] dark:hover:bg-white/[0.03]"
-                    style={{ borderColor: "var(--border)" }}
-                  >
-                    <td className="px-4 py-3 align-top">
-                      <div className="flex items-start gap-2">
-                        <span className="mt-1.5">
-                          <StatusDot status={o.status} />
-                        </span>
-                        <div className="min-w-0">
-                          <Link
-                            href={`/opportunities/${o.id}`}
-                            className="font-medium hover:underline underline-offset-2"
-                          >
-                            {o.title}
-                          </Link>
-                          <div
-                            className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"
-                            style={{ color: "var(--text-dim)" }}
-                          >
-                            <span>{o.funder}</span>
-                            {o.disciplines.slice(0, 3).map((d) => (
-                              <Tag key={d}>{d}</Tag>
-                            ))}
-                          </div>
-                          {match && match.reasons.length > 0 && (
-                            <p className="mt-1 text-xs" style={{ color: "var(--text-faint)" }}>
-                              {match.reasons.slice(0, 2).join(" · ")}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="hidden px-4 py-3 align-top sm:table-cell">
-                      <Award award={o.award} />
-                    </td>
-                    <td className="px-4 py-3 align-top">
-                      <Deadline opp={o} />
-                    </td>
-                    <td className="hidden px-4 py-3 align-top md:table-cell">
-                      {match ? (
-                        <span className="nums font-medium">{Math.round(match.score * 100)}%</span>
-                      ) : (
-                        <Confidence value={o.confidence} />
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                All studies →
+              </Link>
+            </div>
+
+            <ul className="space-y-2">
+              {gaps.map((gap) => (
+                <li
+                  key={gap.condition}
+                  className="rounded-lg border p-4"
+                  style={{ borderColor: "var(--border)", background: "var(--surface)" }}
+                >
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                    <Link
+                      href={`/studies?condition=${encodeURIComponent(gap.condition)}`}
+                      className="font-medium capitalize hover:underline underline-offset-2"
+                    >
+                      {gap.condition}
+                    </Link>
+                    <span className="nums text-sm font-medium" title="gap score, 0 to 1">
+                      {gap.gap_score.toFixed(2)}
+                    </span>
+                  </div>
+
+                  <div className="mt-2">
+                    <GapBar
+                      primary={gap.primary_count}
+                      partial={gap.partial_count}
+                      none={gap.none_count}
+                      unclear={gap.unclear_count}
+                    />
+                  </div>
+
+                  <ul className="mt-2 space-y-0.5 text-xs" style={{ color: "var(--text-dim)" }}>
+                    {explainGap(gap).map((reason) => (
+                      <li key={reason}>· {reason}</li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <div
+            className="max-w-2xl space-y-2 text-xs leading-relaxed"
+            style={{ color: "var(--text-faint)" }}
+          >
+            <p>
+              The gap score weights how much evidence exists against how little of it reached the
+              region. Records that never said who was enrolled are excluded from that ratio rather
+              than counted as absent, because a reporting failure and a measured absence are
+              different findings and only one of them is a gap.
+            </p>
+            {singletons > 0 && (
+              <p>
+                {singletons} condition{singletons === 1 ? " was" : "s were"} seen only once and
+                {singletons === 1 ? " is" : " are"} not ranked above. Most are the extractor
+                spelling one condition two ways, which is the clearest thing that improves when
+                the rule-based baseline is swapped for a language model.
+              </p>
+            )}
+          </div>
+        </>
       )}
     </div>
   );
 }
 
-/**
- * A plain GET form. No client JS, no state library: filters live in the URL,
- * so every view is linkable, back/forward works, and the page still renders
- * with scripting disabled.
- */
-function Filters({
-  params,
-  disciplines,
-  profiles,
-}: {
-  params: Search;
-  disciplines: string[];
-  profiles: { id: string; name: string }[];
-}) {
-  const field = "rounded-md border px-2.5 py-1.5 text-sm";
-  const style = { borderColor: "var(--border)", background: "var(--surface)", color: "var(--text)" };
-
+function Stat({ label, value, note }: { label: string; value: string; note?: string }) {
   return (
-    <form className="flex flex-wrap items-center gap-2">
-      <input
-        name="q"
-        defaultValue={params.q ?? ""}
-        placeholder="Search title, funder, summary…"
-        className={`${field} min-w-52 flex-1`}
-        style={style}
-        aria-label="Search opportunities"
-      />
-      <select name="source" defaultValue={params.source ?? ""} className={field} style={style} aria-label="Source">
-        <option value="">All sources</option>
-        {SOURCES.map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.label}
-          </option>
-        ))}
-      </select>
-      <select name="status" defaultValue={params.status ?? ""} className={field} style={style} aria-label="Status">
-        <option value="">Any status</option>
-        <option value="open">Open</option>
-        <option value="rolling">Rolling</option>
-        <option value="closed">Closed</option>
-      </select>
-      <select
-        name="discipline"
-        defaultValue={params.discipline ?? ""}
-        className={field}
-        style={style}
-        aria-label="Discipline"
-      >
-        <option value="">Any discipline</option>
-        {disciplines.map((d) => (
-          <option key={d} value={d}>
-            {d}
-          </option>
-        ))}
-      </select>
-      <select name="profile" defaultValue={params.profile ?? ""} className={field} style={style} aria-label="Rank for profile">
-        <option value="">No ranking</option>
-        {profiles.map((p) => (
-          <option key={p.id} value={p.id}>
-            Rank for {p.name}
-          </option>
-        ))}
-      </select>
-      <button
-        type="submit"
-        className="rounded-md px-3 py-1.5 text-sm font-medium text-white"
-        style={{ background: "var(--color-signal)" }}
-      >
-        Apply
-      </button>
-    </form>
+    <div className="px-4 py-3" style={{ background: "var(--surface)" }}>
+      <dt className="text-[11px] uppercase tracking-wide" style={{ color: "var(--text-faint)" }}>
+        {label}
+      </dt>
+      <dd className="nums mt-1 text-xl font-semibold">{value}</dd>
+      {note && (
+        <p className="mt-0.5 text-[11px]" style={{ color: "var(--text-faint)" }}>
+          {note}
+        </p>
+      )}
+    </div>
   );
 }

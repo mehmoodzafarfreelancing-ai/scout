@@ -3,7 +3,14 @@ import { describe, it } from "node:test";
 import { z } from "zod";
 import { extractStructured } from "./extract";
 import { parseLooseJson } from "./json";
-import { MockLlmClient, guessAward, guessDeadline } from "./mock";
+import {
+  MockLlmClient,
+  guessCountries,
+  guessRepresentation,
+  guessSampleSize,
+  guessStudyType,
+  guessYear,
+} from "./mock";
 import type { CompletionResult, LlmClient } from "./types";
 
 describe("parseLooseJson", () => {
@@ -36,49 +43,100 @@ describe("parseLooseJson", () => {
   });
 });
 
-describe("guessDeadline", () => {
-  it("reads ISO dates", () => {
-    assert.equal(guessDeadline("Full proposal deadline: 2026-11-18."), "2026-11-18");
+describe("guessCountries", () => {
+  it("reads the recruitment countries line", () => {
+    const text = "Enrollment: 120\nRecruitment countries: Pakistan; India\nStart date: 2024-01";
+    assert.deepEqual(guessCountries(text), ["Pakistan", "India"]);
   });
 
-  it("reads day-month-year", () => {
-    assert.equal(guessDeadline("The closing date is 22 Oct 2026 at 16:00."), "2026-10-22");
+  it("returns nothing when the field says it was not stated", () => {
+    assert.deepEqual(guessCountries("Recruitment countries: not stated"), []);
   });
 
-  it("reads month-day-year", () => {
-    assert.equal(guessDeadline("Applications due March 3, 2027."), "2027-03-03");
-  });
-
-  it("skips a cue with no date and keeps looking", () => {
-    // Regression: anchoring on the first cue word returned null here, because
-    // "closed" appears in the banner long before the real date.
-    const text =
-      "This scheme is closed and no longer accepting applications. " +
-      "The information below is retained for reference. " +
-      "The award supported research on the health consequences of climate change, " +
-      "with grants up to 2,500,000. The closing date was 2024-05-30.";
-    assert.equal(guessDeadline(text), "2024-05-30");
-  });
-
-  it("returns null when there is no date", () => {
-    assert.equal(guessDeadline("This is a rolling call with no fixed deadline."), null);
+  it("returns nothing when the field is absent entirely", () => {
+    assert.deepEqual(guessCountries("Abstract: a study of adults."), []);
   });
 });
 
-describe("guessAward", () => {
-  it("expands million and k suffixes", () => {
-    const award = guessAward("Awards of up to £3 million, with seed grants of £150k.");
-    assert.equal(award?.currency, "GBP");
-    assert.equal(award?.max, 3_000_000);
-    assert.equal(award?.min, 150_000);
+describe("guessRepresentation", () => {
+  it("is primary when every recruiting country is in the region", () => {
+    assert.equal(guessRepresentation(["Pakistan"], ""), "primary");
+    assert.equal(guessRepresentation(["India", "Bangladesh"], ""), "primary");
   });
 
-  it("ignores small incidental numbers", () => {
-    assert.equal(guessAward("Contact us on $5 for details."), null);
+  it("is partial when the region is one site among several", () => {
+    assert.equal(guessRepresentation(["United States", "India", "Japan"], ""), "partial");
   });
 
-  it("returns null when no money is mentioned", () => {
-    assert.equal(guessAward("A fellowship for early-career researchers."), null);
+  it("is none when countries are listed and none are in the region", () => {
+    assert.equal(guessRepresentation(["Denmark", "Germany"], ""), "none");
+  });
+
+  it("does not treat other parts of Asia as South Asia", () => {
+    assert.equal(guessRepresentation(["Hong Kong"], ""), "none");
+    assert.equal(guessRepresentation(["Japan", "Malaysia"], ""), "none");
+  });
+
+  it("is unclear, never none, when no country is stated", () => {
+    // The central rule of the whole pipeline. A record that did not say is not
+    // a record that said no, and collapsing the two manufactures a gap.
+    assert.equal(guessRepresentation([], "A review of incretin therapies."), "unclear");
+  });
+
+  it("falls back to a prose mention when there is no country list", () => {
+    assert.equal(guessRepresentation([], "Adults recruited in Karachi."), "partial");
+  });
+});
+
+describe("guessSampleSize", () => {
+  it("prefers the enrollment field", () => {
+    assert.equal(guessSampleSize("Enrollment: 1145\nAbstract: we enrolled 30 pilot cases."), 1145);
+  });
+
+  it("falls back to n= in an abstract", () => {
+    assert.equal(guessSampleSize("Abstract: participants (n = 2,340) were followed."), 2340);
+  });
+
+  it("falls back to a counted noun", () => {
+    assert.equal(guessSampleSize("Abstract: 412 patients were randomised."), 412);
+  });
+
+  it("returns null when no count is given", () => {
+    assert.equal(guessSampleSize("Abstract: a narrative review."), null);
+  });
+});
+
+describe("guessStudyType", () => {
+  it("reads the declared type", () => {
+    assert.equal(guessStudyType("Study type: INTERVENTIONAL"), "interventional");
+    assert.equal(guessStudyType("Study type: OBSERVATIONAL"), "observational");
+  });
+
+  it("recognises a review from the publication type", () => {
+    assert.equal(guessStudyType("Publication type: Meta-Analysis; Systematic Review"), "review");
+  });
+
+  it("infers from the body when nothing is declared", () => {
+    assert.equal(guessStudyType("Abstract: a double-blind placebo controlled trial."), "interventional");
+    assert.equal(guessStudyType("Abstract: a cross-sectional survey."), "observational");
+  });
+
+  it("falls back to other", () => {
+    assert.equal(guessStudyType("Abstract: an editorial."), "other");
+  });
+});
+
+describe("guessYear", () => {
+  it("reads a publication year", () => {
+    assert.equal(guessYear("Publication year: 2026"), 2026);
+  });
+
+  it("reads the year out of a start date", () => {
+    assert.equal(guessYear("Start date: 2017-08-16"), 2017);
+  });
+
+  it("returns null when absent", () => {
+    assert.equal(guessYear("Start date: not stated"), null);
   });
 });
 
@@ -152,12 +210,28 @@ describe("extractStructured", () => {
 describe("MockLlmClient", () => {
   it("always emits output that satisfies the target schema", async () => {
     const client = new MockLlmClient();
-    const { ExtractedOpportunity } = await import("@/lib/db/types");
+    const { ExtractedStudy } = await import("@/lib/db/types");
     const res = await client.complete({
       system: "",
-      user: "TITLE:\nWellcome Discovery Award\n\nCONTENT:\nThe Wellcome Trust funds neuroscience and psychology research. Awards of up to £3 million over five years. The closing date is 9 Dec 2026.",
+      user:
+        "TITLE:\nA trial of metformin\n\nCONTENT:\nCondition(s): Type 2 Diabetes\n" +
+        "Study type: INTERVENTIONAL\nEnrollment: 120\nRecruitment countries: Pakistan\n" +
+        "Start date: 2024-03-01\n\nAdults with type 2 diabetes recruited at two hospitals.",
     });
-    const parsed = ExtractedOpportunity.safeParse(JSON.parse(res.text));
+    const parsed = ExtractedStudy.safeParse(JSON.parse(res.text));
+    assert.equal(parsed.success, true, JSON.stringify(parsed.error?.issues));
+  });
+
+  it("satisfies the schema even for a record with almost nothing in it", async () => {
+    // Every field has a minimum length or a nullable, and a thin abstract is
+    // the case most likely to violate one.
+    const client = new MockLlmClient();
+    const { ExtractedStudy } = await import("@/lib/db/types");
+    const res = await client.complete({
+      system: "",
+      user: "TITLE:\nShort\n\nCONTENT:\nAbstract: not available",
+    });
+    const parsed = ExtractedStudy.safeParse(JSON.parse(res.text));
     assert.equal(parsed.success, true, JSON.stringify(parsed.error?.issues));
   });
 });

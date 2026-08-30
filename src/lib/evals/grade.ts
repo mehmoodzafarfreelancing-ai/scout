@@ -1,50 +1,35 @@
-import type { ExtractedOpportunity } from "@/lib/db/types";
+import type { ExtractedStudy } from "@/lib/db/types";
 
 /**
  * Field-level grading for extraction output.
  *
- * Two principles. Grade identity, not strings: "NSF" and "National Science
- * Foundation" name the same funder and both are correct. And grade each field
- * separately: a run that nails every deadline but guesses every award is a very
- * different failure from one that does the reverse, and a single accuracy
- * number hides which one you have.
+ * Two principles. Grade meaning, not strings: "type 2 diabetes" and "Diabetes
+ * Mellitus, Type 2" are the same condition and both are correct. And grade each
+ * field separately, because a run that reads every population correctly but
+ * misses every sample size is a very different failure from the reverse, and a
+ * single accuracy number hides which one you have.
  */
 
 export type Label = {
-  fixture: string;
+  ref: string;
+  source: string;
   should_extract: boolean;
-  funder_accept?: string[];
-  deadline?: string | null;
-  status?: string;
-  award?: { min: number | null; max: number | null; currency: string } | null;
-  disciplines?: string[];
+  condition_accept?: string[];
+  study_type?: string;
+  sample_size?: number | null;
+  countries?: string[];
+  representation?: string;
+  year?: number | null;
+  note?: string;
 };
 
 export type FieldGrade = { field: string; score: number; expected: string; got: string };
 
-const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
+const norm = (s: string) =>
+  s.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
 const show = (v: unknown) => (v === null || v === undefined ? "—" : String(v));
 
-/** Amounts are correct within 1%; funders round and restate figures constantly. */
-function moneyMatches(expected: number | null, got: number | null): boolean {
-  if (expected === null) return got === null;
-  if (got === null) return false;
-  return Math.abs(got - expected) <= Math.max(expected * 0.01, 1);
-}
-
-function funderScore(accept: string[], got: string): number {
-  const g = norm(got);
-  // Substring either way: "Wellcome" inside "Wellcome Trust" is right, and so
-  // is an extractor that supplies the fuller official name.
-  return accept.some((a) => {
-    const e = norm(a);
-    return g === e || g.includes(e) || e.includes(g);
-  })
-    ? 1
-    : 0;
-}
-
-/** F1 over normalised sets: rewards recall without letting a scattergun win. */
+/** Set F1: rewards recall without letting a scattergun answer win. */
 export function setF1(expected: string[], got: string[]): number {
   const e = new Set(expected.map(norm));
   const g = new Set(got.map(norm));
@@ -58,73 +43,99 @@ export function setF1(expected: string[], got: string[]): number {
   return precision + recall === 0 ? 0 : (2 * precision * recall) / (precision + recall);
 }
 
-export function gradeCase(label: Label, got: ExtractedOpportunity): FieldGrade[] {
+function conditionScore(accept: string[], got: string): number {
+  const g = norm(got);
+  // Word-set overlap, so "type 2 diabetes" matches "diabetes mellitus type 2"
+  // without needing every alias spelled out in the labels.
+  return accept.some((a) => {
+    const e = norm(a);
+    if (g === e || g.includes(e) || e.includes(g)) return true;
+    const ew = new Set(e.split(" "));
+    const gw = e.split(" ").length === 0 ? [] : g.split(" ");
+    const shared = gw.filter((w) => ew.has(w)).length;
+    return shared >= Math.max(2, Math.ceil(ew.size * 0.6));
+  })
+    ? 1
+    : 0;
+}
+
+export function gradeCase(label: Label, got: ExtractedStudy): FieldGrade[] {
   const grades: FieldGrade[] = [];
 
-  if (label.funder_accept) {
+  if (label.condition_accept) {
     grades.push({
-      field: "funder",
-      score: funderScore(label.funder_accept, got.funder),
-      expected: label.funder_accept[0] ?? "—",
-      got: got.funder,
+      field: "condition",
+      score: conditionScore(label.condition_accept, got.condition),
+      expected: label.condition_accept[0] ?? "—",
+      got: got.condition,
     });
   }
 
-  if (label.deadline !== undefined) {
+  if (label.study_type !== undefined) {
     grades.push({
-      field: "deadline",
-      score: label.deadline === got.deadline ? 1 : 0,
-      expected: show(label.deadline),
-      got: show(got.deadline),
+      field: "study_type",
+      score: label.study_type === got.study_type ? 1 : 0,
+      expected: label.study_type,
+      got: got.study_type,
     });
   }
 
-  if (label.status !== undefined) {
+  if (label.sample_size !== undefined) {
     grades.push({
-      field: "status",
-      score: label.status === got.status ? 1 : 0,
-      expected: label.status,
-      got: got.status,
+      field: "sample_size",
+      score: label.sample_size === got.sample_size ? 1 : 0,
+      expected: show(label.sample_size),
+      got: show(got.sample_size),
     });
   }
 
-  if (label.award !== undefined) {
-    // Min and max are scored separately: reading the ceiling correctly while
-    // missing the floor is a partial success, and averaging says so.
-    const expected = label.award;
-    const got_ = got.award;
-    const parts = expected === null || got_ === null
-      ? [expected === got_ ? 1 : 0]
-      : [
-          moneyMatches(expected.min, got_.min) ? 1 : 0,
-          moneyMatches(expected.max, got_.max) ? 1 : 0,
-          expected.currency === got_.currency ? 1 : 0,
-        ];
+  if (label.countries) {
     grades.push({
-      field: "award",
-      score: parts.reduce((a, b) => a + b, 0) / parts.length,
-      expected: expected ? `${show(expected.min)}–${show(expected.max)} ${expected.currency}` : "—",
-      got: got_ ? `${show(got_.min)}–${show(got_.max)} ${got_.currency}` : "—",
+      field: "countries",
+      score: setF1(label.countries, got.countries),
+      expected: label.countries.join(", ") || "—",
+      got: got.countries.join(", ") || "—",
     });
   }
 
-  if (label.disciplines) {
+  if (label.year !== undefined) {
     grades.push({
-      field: "disciplines",
-      score: setF1(label.disciplines, got.disciplines),
-      expected: label.disciplines.join(", "),
-      got: got.disciplines.join(", ") || "—",
+      field: "year",
+      score: label.year === got.year ? 1 : 0,
+      expected: show(label.year),
+      got: show(got.year),
     });
   }
 
-  // Summary prose can't be graded without a judge model. Checking that it is
-  // present and substantive is honest; claiming to score its quality is not.
-  grades.push({
-    field: "summary",
-    score: got.summary.trim().length >= 60 ? 1 : 0,
-    expected: "≥60 chars",
-    got: `${got.summary.trim().length} chars`,
-  });
+  /**
+   * Representation is graded last and weighted nowhere, because it does not
+   * need weighting: it is reported as its own line and it is the only field the
+   * product's conclusions actually rest on. Everything else is context.
+   *
+   * There is no partial credit. Calling an unreported population "none" is the
+   * failure this whole system exists to avoid, and scoring it as "nearly right"
+   * would hide exactly the error that matters.
+   */
+  if (label.representation !== undefined) {
+    grades.push({
+      field: "representation",
+      score: label.representation === got.representation ? 1 : 0,
+      expected: label.representation,
+      got: got.representation,
+    });
+  }
 
   return grades;
+}
+
+/**
+ * Confusions worth counting separately.
+ *
+ * "said none when the truth was unclear" is a different and more damaging error
+ * than "said unclear when the truth was none": the first invents a measured
+ * absence out of a silent record and inflates every gap score downstream.
+ */
+export function confusionOf(expected: string, got: string): string | null {
+  if (expected === got) return null;
+  return `${expected}→${got}`;
 }

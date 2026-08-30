@@ -10,13 +10,18 @@ function flag(name: string): string | undefined {
   return hit?.split("=").slice(1).join("=");
 }
 
-const sources = flag("sources")?.split(",").map((s) => s.trim()).filter(Boolean);
+const list = (name: string) =>
+  flag(name)?.split(",").map((s) => s.trim()).filter(Boolean);
+
+const sources = list("sources");
+const conditions = list("conditions");
 const budget = flag("budget") ? Number(flag("budget")) : undefined;
+const perCondition = flag("per") ? Number(flag("per")) : undefined;
 const force = process.argv.includes("--force");
 
 console.log("[ingest] stack:", activeStack());
 
-const run = await runIngest({ trigger: "manual", sources, budget, force });
+const run = await runIngest({ trigger: "manual", sources, conditions, budget, perCondition, force });
 
 const ms = Date.parse(run.finished_at ?? run.started_at) - Date.parse(run.started_at);
 console.log(
@@ -26,8 +31,9 @@ console.log(
     `  duration   ${(ms / 1000).toFixed(1)}s`,
     `  scraper    ${run.scrape_provider}`,
     `  model      ${run.llm_provider}`,
-    `  fetched    ${run.pages_fetched}`,
-    `  skipped    ${run.pages_skipped}  (unchanged or too short)`,
+    `  seen       ${run.records_seen}`,
+    `  skipped    ${run.records_skipped}  (unchanged or too short)`,
+    `  enriched   ${run.enriched}  (full text fetched for thin records)`,
     `  extracted  ${run.extracted}`,
     `  rejected   ${run.rejected}`,
     "",
@@ -40,4 +46,4 @@ if (run.errors.length > 0) {
   console.log("");
 }
 
-process.exit(run.extracted === 0 && run.pages_fetched > 0 && run.pages_skipped === 0 ? 1 : 0);
+process.exit(run.extracted === 0 && run.records_seen > 0 && run.records_skipped === 0 ? 1 : 0);

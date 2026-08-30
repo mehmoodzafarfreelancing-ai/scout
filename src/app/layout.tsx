@@ -4,9 +4,9 @@ import { activeStack } from "@/lib/config";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Scout — research funding intelligence",
+  title: "Scout: research evidence coverage",
   description:
-    "Scrapes funder websites, extracts structured opportunities with an LLM, and scores them against a researcher profile.",
+    "Reads study records from ClinicalTrials.gov and Europe PMC, extracts which population was actually recruited, and ranks conditions by how little of their evidence base reaches South Asia.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -30,7 +30,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
             <nav className="flex items-center gap-5 text-sm" style={{ color: "var(--text-dim)" }}>
               <Link href="/" className="hover:underline underline-offset-4">
-                Opportunities
+                Gaps
+              </Link>
+              <Link href="/studies" className="hover:underline underline-offset-4">
+                Studies
               </Link>
               <Link href="/runs" className="hover:underline underline-offset-4">
                 Ingest runs
@@ -56,8 +59,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           className="mx-auto max-w-6xl px-5 pb-10 pt-4 text-xs"
           style={{ color: "var(--text-faint)" }}
         >
-          Data is extracted automatically and may be wrong. Always confirm details on the funder's
-          own page before applying.
+          Every field on this site was extracted from a source record by a language model and may
+          be wrong. Each study links back to the record it came from. Check there before citing
+          anything.
         </footer>
       </body>
     </html>

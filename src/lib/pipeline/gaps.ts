@@ -41,7 +41,7 @@ export function computeGaps(studies: Study[], now = new Date()): Gap[] {
   const computedAt = now.toISOString();
 
   return [...byCondition.entries()]
-    .map(([condition, rows]) => {
+    .map(([, rows]) => {
       const count = (r: Study["representation"]) => rows.filter((s) => s.representation === r).length;
 
       const primary = count("primary");
@@ -53,7 +53,11 @@ export function computeGaps(studies: Study[], now = new Date()): Gap[] {
         rows.filter(predicate).reduce((sum, s) => sum + (s.sample_size ?? 0), 0);
 
       return {
-        condition,
+        // The grouping key is word-sorted so spellings collapse, which makes it
+        // unreadable ("2 diabetes type"). Store the label a person would write
+        // instead, and pick it by frequency so one odd extraction cannot name
+        // the whole group.
+        condition: displayLabel(rows),
         total_studies: rows.length,
         primary_count: primary,
         partial_count: partial,
@@ -77,7 +81,14 @@ export function gapScore(total: number, primary: number, partial: number, unclea
   // cannot count against it either. Removing them from the denominator means an
   // under-reported literature does not masquerade as a measured absence.
   const known = total - unclear;
-  const coverage = known <= 0 ? 0 : Math.min(1, (primary + partial * PARTIAL_CREDIT) / known);
+
+  // If nothing reported, there is no coverage ratio to compute. Scoring this as
+  // a maximum gap would be asserting an absence that was never measured, which
+  // is the exact error the unclear/none split exists to prevent. Unknown ranks
+  // as zero and the count is surfaced in the UI instead.
+  if (known <= 0) return 0;
+
+  const coverage = Math.min(1, (primary + partial * PARTIAL_CREDIT) / known);
 
   const volume = Math.min(1, Math.log1p(total) / Math.log1p(VOLUME_SATURATION));
 
@@ -143,8 +154,14 @@ export function normaliseCondition(raw: string): string {
   return words.join(" ");
 }
 
-/** Turn the normalised key back into something a person reads comfortably. */
-export function displayCondition(normalised: string, studies: Study[]): string {
-  const match = studies.find((s) => normaliseCondition(s.condition) === normalised);
-  return match?.condition ?? normalised;
+/** The most common raw spelling in a group, used as its display name. */
+export function displayLabel(rows: Study[]): string {
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    const label = r.condition.trim().toLowerCase();
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  // Ties break on the shorter string, which is almost always the cleaner name:
+  // "tuberculosis" over "tuberculosis, pulmonary, drug-resistant".
+  return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].length - b[0].length)[0]?.[0] ?? "unspecified";
 }

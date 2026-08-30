@@ -1,190 +1,215 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { applyFilter } from "@/lib/db/json-repo";
-import type { Opportunity, Profile } from "@/lib/db/types";
-import { contentHash, opportunityId } from "./ids";
-import { formatMoney, scoreOpportunity } from "./match";
-import { SOURCES, selectCandidates } from "./sources";
+import type { Study } from "@/lib/db/types";
+import { computeGaps, displayLabel, explainGap, gapScore, normaliseCondition } from "./gaps";
+import { contentHash, studyId } from "./ids";
 
-const opp = (over: Partial<Opportunity> = {}): Opportunity => ({
+const study = (over: Partial<Study> = {}): Study => ({
   id: "x",
-  source: "nsf",
-  source_url: "https://example.org/x",
-  title: "Machine Learning Systems Grant",
-  funder: "NSF",
-  programme: null,
-  summary: "Funding for distributed systems and machine learning research.",
-  disciplines: ["computer science", "engineering"],
-  eligibility: null,
-  award: { min: 100_000, max: 500_000, currency: "USD" },
-  deadline: "2026-12-01",
-  status: "open",
+  source: "clinicaltrials",
+  source_ref: "NCT00000001",
+  source_url: "https://clinicaltrials.gov/study/NCT00000001",
+  title: "A trial of something",
+  condition: "type 2 diabetes",
+  intervention: "metformin",
+  study_type: "interventional",
+  sample_size: 200,
+  countries: ["Pakistan"],
+  population_note: "Adults recruited at two hospitals in Lahore.",
+  representation: "primary",
+  year: 2024,
   confidence: 0.9,
   content_hash: "h",
+  enriched: false,
   first_seen_at: "2026-01-01T00:00:00.000Z",
   last_seen_at: "2026-01-01T00:00:00.000Z",
   extracted_by: "test",
   ...over,
 });
 
-const profile: Profile = {
-  id: "p",
-  name: "Test",
-  disciplines: ["computer science", "engineering"],
-  keywords: ["machine learning", "distributed systems"],
-  career_stage: "early-career",
-  country: "PK",
-  min_award: 50_000,
-};
-
-const NOW = new Date("2026-09-01T00:00:00.000Z");
-
 describe("ids", () => {
-  it("gives the same id for URLs differing only in case or trailing slash", () => {
-    assert.equal(
-      opportunityId("nsf", "https://Example.org/Funding/A/"),
-      opportunityId("nsf", "https://example.org/funding/a"),
-    );
+  it("gives the same id for the same reference regardless of case or padding", () => {
+    assert.equal(studyId("clinicaltrials", " NCT12345 "), studyId("clinicaltrials", "nct12345"));
   });
 
-  it("separates the same path under different sources", () => {
-    assert.notEqual(
-      opportunityId("nsf", "https://e.org/a"),
-      opportunityId("ukri", "https://e.org/a"),
-    );
+  it("separates the same reference under different sources", () => {
+    assert.notEqual(studyId("clinicaltrials", "123"), studyId("europepmc", "123"));
   });
 
   it("ignores whitespace and clock churn when hashing content", () => {
     // Without this, a "last updated 14:32" stamp re-triggers extraction daily.
-    assert.equal(contentHash("Deadline 14:32 today"), contentHash("Deadline   09:01   today"));
+    assert.equal(contentHash("Enrolled 14:32 today"), contentHash("Enrolled   09:01   today"));
   });
 
   it("still detects a real content change", () => {
-    assert.notEqual(contentHash("Award up to $1m"), contentHash("Award up to $2m"));
+    assert.notEqual(contentHash("Enrollment: 100"), contentHash("Enrollment: 200"));
   });
 });
 
-describe("scoreOpportunity", () => {
-  it("scores a strong match highly and explains why", () => {
-    const { score, reasons } = scoreOpportunity(opp(), profile, NOW);
-    assert.ok(score > 0.8, `expected > 0.8, got ${score}`);
-    assert.ok(reasons.some((r) => r.includes("computer science")));
-    assert.ok(reasons.some((r) => r.includes("machine learning")));
+describe("normaliseCondition", () => {
+  it("folds word order and the mellitus suffix together", () => {
+    assert.equal(
+      normaliseCondition("Diabetes Mellitus, Type 2"),
+      normaliseCondition("type 2 diabetes"),
+    );
   });
 
-  it("collapses the score for a passed deadline", () => {
-    const { score, reasons } = scoreOpportunity(opp({ deadline: "2026-01-01" }), profile, NOW);
-    assert.ok(score < 0.25, `expected < 0.25, got ${score}`);
-    assert.ok(reasons.some((r) => /passed/i.test(r)));
-  });
-
-  it("collapses the score for a closed call", () => {
-    const { score } = scoreOpportunity(opp({ status: "closed" }), profile, NOW);
-    assert.ok(score < 0.25);
-  });
-
-  it("flags a tight turnaround without hiding the opportunity", () => {
-    const { score, reasons } = scoreOpportunity(opp({ deadline: "2026-09-08" }), profile, NOW);
-    assert.ok(score > 0.5);
-    assert.ok(reasons.some((r) => /tight turnaround/.test(r)));
-  });
-
-  it("warns when the extraction was low confidence", () => {
-    const { reasons } = scoreOpportunity(opp({ confidence: 0.3 }), profile, NOW);
-    assert.ok(reasons.some((r) => /verify on the source page/.test(r)));
-  });
-
-  it("notes an award below the threshold the researcher set", () => {
-    const small = opp({ award: { min: 1_000, max: 5_000, currency: "USD" } });
-    const { reasons } = scoreOpportunity(small, profile, NOW);
-    assert.ok(reasons.some((r) => /threshold/.test(r)));
-  });
-
-  it("never exceeds 1", () => {
-    const { score } = scoreOpportunity(opp({ confidence: 1 }), profile, NOW);
-    assert.ok(score <= 1);
+  it("keeps genuinely different conditions apart", () => {
+    assert.notEqual(normaliseCondition("tuberculosis"), normaliseCondition("hepatitis c"));
   });
 });
 
-describe("selectCandidates", () => {
-  const nsf = SOURCES.find((s) => s.id === "nsf")!;
-
-  it("keeps only links matching the detail-page pattern for the source", () => {
-    const picked = selectCandidates(nsf, [
-      "https://www.nsf.gov/funding/opp/cise-core",
-      "https://www.nsf.gov/news/story",
-      "https://twitter.com/nsf",
-    ]);
-    assert.deepEqual(picked, ["https://www.nsf.gov/funding/opp/cise-core"]);
+describe("displayLabel", () => {
+  it("picks the most common spelling in the group", () => {
+    const rows = [
+      study({ condition: "tuberculosis" }),
+      study({ condition: "tuberculosis" }),
+      study({ condition: "Tuberculosis, Pulmonary" }),
+    ];
+    assert.equal(displayLabel(rows), "tuberculosis");
   });
 
-  it("applies exclusions and drops the seed page itself", () => {
-    const picked = selectCandidates(nsf, ["https://www.nsf.gov/funding/opp/a.pdf", nsf.seed]);
-    assert.deepEqual(picked, []);
+  it("breaks ties on the shorter name, which is the cleaner one", () => {
+    const rows = [study({ condition: "tuberculosis" }), study({ condition: "pulmonary tuberculosis" })];
+    assert.equal(displayLabel(rows), "tuberculosis");
+  });
+});
+
+describe("gapScore", () => {
+  it("is zero when every study reached the region", () => {
+    assert.equal(gapScore(10, 10, 0, 0), 0);
   });
 
-  it("respects maxPages", () => {
-    const many = Array.from({ length: 50 }, (_, i) => `https://www.nsf.gov/funding/opp/${i}`);
-    assert.equal(selectCandidates(nsf, many).length, nsf.maxPages);
+  it("rises as coverage falls", () => {
+    assert.ok(gapScore(10, 0, 0, 0) > gapScore(10, 5, 0, 0));
+  });
+
+  it("gives a partial cohort half the credit of a primary one", () => {
+    assert.ok(gapScore(10, 0, 4, 0) > gapScore(10, 4, 0, 0));
+  });
+
+  it("excludes unreported records from the denominator rather than counting them as absent", () => {
+    // The central rule. Eight studies, two that reported and both reached the
+    // region: that is full coverage, not 25%.
+    assert.equal(gapScore(8, 2, 0, 6), 0);
+  });
+
+  it("returns zero rather than dividing by zero when nothing reported", () => {
+    assert.equal(gapScore(5, 0, 0, 5), 0);
+  });
+
+  it("weights a large evidence base above a small one at equal coverage", () => {
+    assert.ok(gapScore(50, 0, 0, 0) > gapScore(3, 0, 0, 0));
+  });
+
+  it("saturates instead of running away with volume", () => {
+    assert.ok(gapScore(5000, 0, 0, 0) <= 1);
+  });
+
+  it("is zero for an empty set", () => {
+    assert.equal(gapScore(0, 0, 0, 0), 0);
+  });
+});
+
+describe("computeGaps", () => {
+  const rows = [
+    study({ id: "a", condition: "Type 2 Diabetes", representation: "primary", sample_size: 100 }),
+    study({ id: "b", condition: "diabetes mellitus, type 2", representation: "none", sample_size: 900 }),
+    study({ id: "c", condition: "type 2 diabetes", representation: "unclear", sample_size: null }),
+    study({ id: "d", condition: "tuberculosis", representation: "none", sample_size: 50 }),
+  ];
+
+  it("groups spellings of one condition into a single row", () => {
+    const gaps = computeGaps(rows);
+    assert.equal(gaps.length, 2);
+    const diabetes = gaps.find((g) => g.condition.includes("diabetes"))!;
+    assert.equal(diabetes.total_studies, 3);
+  });
+
+  it("names the group readably rather than by its sort key", () => {
+    // Regression: the grouping key is word-sorted, so using it as the label
+    // rendered "2 diabetes type" on the dashboard.
+    const label = computeGaps(rows).find((g) => g.condition.includes("diabetes"))!.condition;
+    assert.ok(!/^2 /.test(label), `expected a readable label, got "${label}"`);
+  });
+
+  it("counts each representation state separately", () => {
+    const diabetes = computeGaps(rows).find((g) => g.condition.includes("diabetes"))!;
+    assert.equal(diabetes.primary_count, 1);
+    assert.equal(diabetes.none_count, 1);
+    assert.equal(diabetes.unclear_count, 1);
+  });
+
+  it("sums participants, treating a missing sample size as zero", () => {
+    const diabetes = computeGaps(rows).find((g) => g.condition.includes("diabetes"))!;
+    assert.equal(diabetes.total_participants, 1000);
+    assert.equal(diabetes.represented_participants, 100);
+  });
+
+  it("sorts the worst gap first", () => {
+    const gaps = computeGaps(rows);
+    assert.ok(gaps[0]!.gap_score >= gaps[1]!.gap_score);
+  });
+});
+
+describe("explainGap", () => {
+  it("says plainly when nothing reached the region", () => {
+    const gap = computeGaps([study({ representation: "none" })])[0]!;
+    assert.ok(explainGap(gap).some((r) => /No study/.test(r)));
+  });
+
+  it("reports unreported records as excluded, not as absent", () => {
+    const gap = computeGaps([
+      study({ id: "a", representation: "unclear" }),
+      study({ id: "b", representation: "none" }),
+    ])[0]!;
+    assert.ok(explainGap(gap).some((r) => /did not report/.test(r) && /Excluded/.test(r)));
+  });
+
+  it("warns when the sample is too small to conclude from", () => {
+    const gap = computeGaps([study()])[0]!;
+    assert.ok(explainGap(gap).some((r) => /Too few/.test(r)));
   });
 });
 
 describe("applyFilter", () => {
   const rows = [
-    opp({ id: "a", deadline: "2027-01-01", disciplines: ["biology"] }),
-    opp({ id: "b", deadline: "2026-10-01" }),
-    opp({ id: "c", deadline: null, status: "rolling" }),
+    study({ id: "a", representation: "none", year: 2020 }),
+    study({ id: "b", representation: "primary", year: 2024 }),
+    study({ id: "c", representation: "unclear", year: 2022, condition: "tuberculosis" }),
   ];
 
-  it("sorts by soonest deadline with undated rows last", () => {
+  it("leads with the studies that reached the region", () => {
     assert.deepEqual(
       applyFilter(rows, {}).map((r) => r.id),
-      ["b", "a", "c"],
+      ["b", "c", "a"],
     );
   });
 
-  it("sinks closed and expired calls below everything actionable", () => {
-    // Regression: ordering purely by deadline put a call that closed in 2024 at
-    // the top of the list, because its date was the earliest one present.
-    const withDead = [
-      opp({ id: "closed", deadline: "2024-05-30", status: "closed" }),
-      opp({ id: "expired", deadline: "2026-01-01", status: "open" }),
-      ...rows,
-    ];
-    const ids = applyFilter(withDead, {}).map((r) => r.id);
-    assert.deepEqual(ids.slice(0, 3), ["b", "a", "c"]);
-    assert.deepEqual(ids.slice(3).sort(), ["closed", "expired"]);
-  });
-
-  it("filters by discipline", () => {
+  it("filters by representation", () => {
     assert.deepEqual(
-      applyFilter(rows, { discipline: "Biology" }).map((r) => r.id),
-      ["a"],
+      applyFilter(rows, { representation: "unclear" }).map((r) => r.id),
+      ["c"],
     );
   });
 
-  it("searches title, funder and summary case-insensitively", () => {
-    assert.equal(applyFilter(rows, { q: "MACHINE learning" }).length, 3);
+  it("matches a condition through its normalised form", () => {
+    assert.deepEqual(
+      applyFilter(rows, { condition: "Diabetes Mellitus, Type 2" }).map((r) => r.id),
+      ["b", "a"],
+    );
+  });
+
+  it("searches title, condition and population note case-insensitively", () => {
+    assert.equal(applyFilter(rows, { q: "LAHORE" }).length, 3);
     assert.equal(applyFilter(rows, { q: "no such thing" }).length, 0);
   });
 
   it("paginates", () => {
     assert.deepEqual(
       applyFilter(rows, { limit: 1, offset: 1 }).map((r) => r.id),
-      ["a"],
+      ["c"],
     );
-  });
-});
-
-describe("formatMoney", () => {
-  it("abbreviates by magnitude", () => {
-    assert.equal(formatMoney(3_000_000, "GBP"), "£3M");
-    assert.equal(formatMoney(1_200_000, "GBP"), "£1.2M");
-    assert.equal(formatMoney(750_000, "USD"), "$750k");
-    assert.equal(formatMoney(400, "EUR"), "€400");
-  });
-
-  it("falls back to the code for unknown currencies", () => {
-    assert.equal(formatMoney(500, "PKR"), "PKR 500");
   });
 });
