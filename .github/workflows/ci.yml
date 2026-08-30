@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      # The point of the fixture + mock providers: CI exercises the real
+      # pipeline — discovery, normalisation, extraction, dedupe, scoring — with
+      # no API keys, no network, and no spend.
+      - name: Pipeline smoke test
+        run: npm run ingest:fixtures
+
+      - name: Assert the run actually stored something
+        run: |
+          node -e "
+            const s = require('./.data/store.json');
+            const n = s.opportunities.length;
+            if (n < 5) { console.error('expected >= 5 opportunities, got ' + n); process.exit(1); }
+            const undated = s.opportunities.filter(o => o.status === 'open' && !o.deadline);
+            if (undated.length) { console.error('open rows with no deadline: ' + undated.length); process.exit(1); }
+            console.log('pipeline smoke test ok: ' + n + ' opportunities');
+          "
+
+      - run: npm run build

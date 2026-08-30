@@ -1,0 +1,55 @@
+name: Nightly ingest
+
+on:
+  schedule:
+    # 02:15 UTC. Off the hour on purpose — every free-tier API is busiest at :00.
+    - cron: "15 2 * * *"
+  workflow_dispatch:
+    inputs:
+      sources:
+        description: "Comma-separated source ids (blank = all)"
+        required: false
+      force:
+        description: "Re-extract even when page content is unchanged"
+        type: boolean
+        default: false
+
+# A second run starting while the first is mid-crawl would double-spend the
+# free-tier budget for no benefit.
+concurrency:
+  group: ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Only Chromium, and only its own deps: the full `playwright install`
+      # pulls three browsers and costs several minutes of the free CI budget.
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run ingest
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+          EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
+          SCRAPE_PROVIDER: auto
+          LLM_PROVIDER: auto
+        run: |
+          npm run ingest -- \
+            ${{ inputs.sources && format('--sources={0}', inputs.sources) || '' }} \
+            ${{ inputs.force && '--force' || '' }} \
+            --budget=120
