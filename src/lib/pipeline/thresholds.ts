@@ -6,12 +6,12 @@
  * drift apart silently.
  */
 
-/** Below this a page has too little text to be a funding call; skip the model. */
-export const MIN_PAGE_CHARS = 400;
+/** Below this a record says too little to extract from; skip the model. */
+export const MIN_RECORD_CHARS = 400;
 
 /**
  * Below this the extraction is discarded. Set at 0.4 because that is where
- * index pages, news posts and closed archives cluster once a model is asked to
- * score whether a page is genuinely a call it read correctly.
+ * unreadable records and mis-parsed pages cluster once a model is asked to
+ * score whether it read the record correctly.
  */
 export const MIN_CONFIDENCE = 0.4;

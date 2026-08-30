@@ -27,17 +27,31 @@ export type ExtractionResult<T> =
   | { ok: true; data: T; meta: ExtractionMeta }
   | { ok: false; error: string; meta: ExtractionMeta };
 
-const SYSTEM = `You extract structured records about research funding opportunities from web pages.
+const SYSTEM = `You extract structured records about health research studies from registry entries and publication metadata.
+
+The purpose of this extraction is to measure which populations a body of evidence actually covers, so the population fields matter more than anything else. Be strict about them.
 
 Rules:
 - Return ONE JSON object and nothing else. No prose, no markdown fences.
-- Use only facts present in the page. Never infer or invent a value.
+- Use only facts present in the record. Never infer or invent a value.
 - If a field is genuinely absent, use null (or [] for arrays). Do not guess.
-- Dates must be YYYY-MM-DD. If the page gives only "Spring 2026" or similar, use null.
-- Amounts are plain numbers with no currency symbols, commas, or units.
-- "confidence" is your own probability (0-1) that this page is a real funding
-  call and that you read it correctly. Be strict: a listing index, a news post,
-  or a closed archive page should score below 0.4.`;
+- "countries" means where PARTICIPANTS WERE RECRUITED. Author affiliations are
+  not evidence of this. A trial run entirely in Denmark by an author based in
+  Karachi recruited in Denmark.
+- "representation" describes South Asian populations, meaning Pakistan, India,
+  Bangladesh, Sri Lanka, Nepal, Bhutan, the Maldives, or a diaspora cohort
+  explicitly identified as South Asian:
+    "primary"  the study population is mainly South Asian
+    "partial"  South Asian participants are included within a larger cohort
+    "none"     the record states a population and it is not South Asian
+    "unclear"  the record does not say who was enrolled
+  Use "unclear" rather than "none" whenever the record is silent. Those are
+  opposite findings and treating silence as absence corrupts the whole analysis.
+- "sample_size" is enrolled participants. Null if not stated.
+- "condition" should be the common clinical name, lower case, no abbreviation.
+- "confidence" is your own probability (0-1) that this is a real study record
+  and that you read it correctly. Score below 0.4 for an index page, a
+  correction notice, an editorial, or a record too fragmentary to interpret.`;
 
 function formatIssues(issues: z.core.$ZodIssue[]): string {
   return issues
@@ -54,8 +68,8 @@ export async function extractStructured<S extends z.ZodType>(
 ): Promise<ExtractionResult<z.infer<S>>> {
   const jsonSchema = JSON.stringify(z.toJSONSchema(schema, { io: "input" }), null, 2);
 
-  // Long pages are mostly navigation chrome at the tail; the call details sit
-  // near the top. Truncating beats paying for tokens that dilute the signal.
+  // Registry records front-load the structured fields and trail off into
+  // boilerplate. Truncating beats paying for tokens that dilute the signal.
   const body = page.text.length > maxChars ? `${page.text.slice(0, maxChars)}\n…[truncated]` : page.text;
 
   const basePrompt = `Target JSON Schema:\n${jsonSchema}\n\nSOURCE URL: ${page.url}\nTITLE:\n${page.title}\n\nCONTENT:\n${body}`;

@@ -9,43 +9,61 @@ import { z } from "zod";
  * schema changes, all three move together and `tsc` finds the gaps.
  */
 
-export const OpportunityStatus = z.enum(["open", "closed", "rolling", "unknown"]);
-export type OpportunityStatus = z.infer<typeof OpportunityStatus>;
+export const StudyType = z.enum([
+  "interventional",
+  "observational",
+  "review",
+  "case-report",
+  "other",
+]);
+export type StudyType = z.infer<typeof StudyType>;
 
-/** Money as reported by the funder. Ranges are common; single values are not. */
-export const AwardAmount = z.object({
-  min: z.number().nonnegative().nullable(),
-  max: z.number().nonnegative().nullable(),
-  currency: z.string().length(3).default("USD"),
-});
-export type AwardAmount = z.infer<typeof AwardAmount>;
+/**
+ * How far the study's population reaches the region we care about.
+ *
+ * The four-way split matters. "none" and "unclear" look the same in a naive
+ * count, but they are opposite findings: one is a measured absence, the other
+ * is a reporting failure. A tool that collapses them tells you a gap exists
+ * when the truth may be that nobody wrote down who they enrolled.
+ */
+export const Representation = z.enum([
+  /** Explicitly not a South Asian population. */
+  "none",
+  /** South Asian participants included, but as part of a larger cohort. */
+  "partial",
+  /** The study population is primarily South Asian. */
+  "primary",
+  /** The source does not say. Reported separately, never counted as "none". */
+  "unclear",
+]);
+export type Representation = z.infer<typeof Representation>;
 
-/** What the LLM is asked to produce from one page of scraped text. */
-export const ExtractedOpportunity = z.object({
-  title: z.string().min(3).max(300),
-  funder: z.string().min(2).max(200),
-  programme: z.string().max(200).nullable(),
-  summary: z.string().min(20).max(1200),
-  disciplines: z.array(z.string().min(2).max(60)).max(12),
-  eligibility: z.string().max(1000).nullable(),
-  award: AwardAmount.nullable(),
-  /** ISO-8601 date (YYYY-MM-DD). Null when the call is rolling or undated. */
-  deadline: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD")
-    .nullable(),
-  status: OpportunityStatus,
-  /** Model's own confidence that this page really is a funding call. */
+/** What the LLM is asked to produce from one study record. */
+export const ExtractedStudy = z.object({
+  title: z.string().min(5).max(400),
+  /** The primary health condition, normalised to a common name where possible. */
+  condition: z.string().min(2).max(160),
+  /** Drug, device or programme under test. Null for observational work. */
+  intervention: z.string().max(200).nullable(),
+  study_type: StudyType,
+  /** Enrolled participants. Null when the source does not state a number. */
+  sample_size: z.number().int().nonnegative().nullable(),
+  /** Countries where participants were actually recruited, not author affiliations. */
+  countries: z.array(z.string().min(2).max(60)).max(30),
+  /** One sentence on who was studied. This is what a reviewer reads first. */
+  population_note: z.string().min(10).max(500),
+  representation: Representation,
+  year: z.number().int().min(1900).max(2100).nullable(),
+  /** The model's own confidence that it read the record correctly. */
   confidence: z.number().min(0).max(1),
 });
-export type ExtractedOpportunity = z.infer<typeof ExtractedOpportunity>;
+export type ExtractedStudy = z.infer<typeof ExtractedStudy>;
 
 /** A row as stored. Extraction output plus provenance we control, not the model. */
-export const Opportunity = ExtractedOpportunity.extend({
+export const Study = ExtractedStudy.extend({
   id: z.string(),
   source: z.string(),
-  // Not z.url(): the fixture scraper addresses pages as fixture://<name>, and
-  // the store must round-trip those for offline runs and CI.
+  source_ref: z.string(),
   source_url: z.string().refine((v) => {
     try {
       new URL(v);
@@ -54,34 +72,40 @@ export const Opportunity = ExtractedOpportunity.extend({
       return false;
     }
   }, "must be a parsable URL"),
-  /** SHA-256 of the normalised page text; lets us skip unchanged pages. */
+  /** SHA-256 of the normalised record text; lets us skip unchanged records. */
   content_hash: z.string(),
+  /** True when the scraper was used to pull full text the abstract lacked. */
+  enriched: z.boolean(),
   first_seen_at: z.string(),
   last_seen_at: z.string(),
   extracted_by: z.string(),
 });
-export type Opportunity = z.infer<typeof Opportunity>;
+export type Study = z.infer<typeof Study>;
 
-/** The profile an opportunity is scored against. */
-export const Profile = z.object({
-  id: z.string(),
-  name: z.string(),
-  disciplines: z.array(z.string()),
-  keywords: z.array(z.string()),
-  career_stage: z.enum(["student", "postdoc", "early-career", "established"]),
-  country: z.string(),
-  min_award: z.number().nonnegative().nullable(),
+/**
+ * A condition, with how much of its evidence base reaches our region.
+ *
+ * Derived from studies rather than stored by the extractor, so it is always
+ * consistent with the rows it summarises.
+ */
+export const Gap = z.object({
+  condition: z.string(),
+  total_studies: z.number().int(),
+  // Named *_count to match the SQL columns exactly. "primary" is close enough
+  // to reserved in Postgres to be worth stepping around, and having the two
+  // namings differ would mean a mapping layer that can drift.
+  primary_count: z.number().int(),
+  partial_count: z.number().int(),
+  none_count: z.number().int(),
+  unclear_count: z.number().int(),
+  /** Participants across studies that reached the region at all. */
+  represented_participants: z.number().int(),
+  total_participants: z.number().int(),
+  /** 0 to 1. Higher means more evidence with less of it reaching the region. */
+  gap_score: z.number().min(0).max(1),
+  computed_at: z.string(),
 });
-export type Profile = z.infer<typeof Profile>;
-
-export const Match = z.object({
-  opportunity_id: z.string(),
-  profile_id: z.string(),
-  score: z.number().min(0).max(1),
-  reasons: z.array(z.string()),
-  scored_at: z.string(),
-});
-export type Match = z.infer<typeof Match>;
+export type Gap = z.infer<typeof Gap>;
 
 /** One pipeline execution. Surfaced in the dashboard as an audit trail. */
 export const IngestRun = z.object({
@@ -91,8 +115,9 @@ export const IngestRun = z.object({
   trigger: z.enum(["manual", "cron", "webhook"]),
   scrape_provider: z.string(),
   llm_provider: z.string(),
-  pages_fetched: z.number(),
-  pages_skipped: z.number(),
+  records_seen: z.number(),
+  records_skipped: z.number(),
+  enriched: z.number(),
   extracted: z.number(),
   rejected: z.number(),
   errors: z.array(z.string()),
