@@ -28,11 +28,20 @@ function resolveLlm(): LlmProvider {
   return "mock";
 }
 
+/**
+ * Which fetcher pulls full text when a registry record omits its population.
+ *
+ * Note what this does NOT control: where records come from. Both registries are
+ * free public APIs needing no key, so a live run is the default and "fixture"
+ * has to be asked for explicitly. Defaulting to fixtures here would mean
+ * someone who added only an LLM key silently kept getting saved records while
+ * believing they were live, which is the worst kind of wrong.
+ */
 function resolveScrape(): ScrapeProvider {
   const forced = env("SCRAPE_PROVIDER");
   if (forced && forced !== "auto") return forced as ScrapeProvider;
   if (env("FIRECRAWL_API_KEY")) return "firecrawl";
-  return "fixture";
+  return "fetch";
 }
 
 function resolveStore(): StoreProvider {
