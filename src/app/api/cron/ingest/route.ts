@@ -32,8 +32,9 @@ export async function GET(req: Request): Promise<NextResponse> {
     duration_ms: Date.now() - started,
     scrape_provider: run.scrape_provider,
     llm_provider: run.llm_provider,
-    fetched: run.pages_fetched,
-    skipped: run.pages_skipped,
+    seen: run.records_seen,
+    skipped: run.records_skipped,
+    enriched: run.enriched,
     extracted: run.extracted,
     rejected: run.rejected,
   });

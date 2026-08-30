@@ -1,16 +1,17 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { config } from "@/lib/config";
-import { compareOpportunities } from "./ordering";
-import type { OpportunityFilter, Repo } from "./repo";
-import type { IngestRun, Match, Opportunity, Profile } from "./types";
+import { normaliseCondition } from "@/lib/pipeline/gaps";
+import { compareStudies } from "./ordering";
+import type { Repo, StudyFilter } from "./repo";
+import type { Gap, IngestRun, Study } from "./types";
 
 /**
  * Supabase-backed store.
  *
- * Reads use the anon key (RLS allows public select) so the dashboard can render
- * on the edge; writes require the service-role key, which only ever exists in
- * the ingest job's environment. Constructing a writer without it fails loudly
- * at startup rather than silently returning empty results from RLS.
+ * Reads use the anon key, since RLS allows public select, so the dashboard can
+ * render on the edge. Writes require the service-role key, which only ever
+ * exists in the ingest job's environment. Constructing a writer without it
+ * fails loudly at startup rather than silently returning empty results.
  */
 export class SupabaseRepo implements Repo {
   readonly name = "supabase";
@@ -25,22 +26,21 @@ export class SupabaseRepo implements Repo {
           : "NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are required",
       );
     }
-    this.db = createClient(config.store.supabaseUrl, key, {
-      auth: { persistSession: false },
-    });
+    this.db = createClient(config.store.supabaseUrl, key, { auth: { persistSession: false } });
   }
 
-  async upsertOpportunities(rows: Opportunity[]) {
+  async upsertStudies(rows: Study[]) {
     if (rows.length === 0) return { inserted: 0, updated: 0 };
 
     const known = await this.knownHashes();
     const inserted = rows.filter((r) => !known.has(r.id)).length;
 
-    // ignoreDuplicates:false = real upsert. first_seen_at is column-defaulted
-    // and deliberately omitted so an update never rewrites the original date.
-    const { error } = await this.db.from("opportunities").upsert(
+    // first_seen_at is column-defaulted and omitted on update, so an update
+    // never rewrites the date the record was first observed.
+    const { error } = await this.db.from("studies").upsert(
       rows.map(({ first_seen_at, ...rest }) => ({
         ...rest,
+        condition_key: normaliseCondition(rest.condition),
         ...(known.has(rest.id) ? {} : { first_seen_at }),
       })),
       { onConflict: "id", ignoreDuplicates: false },
@@ -50,72 +50,59 @@ export class SupabaseRepo implements Repo {
     return { inserted, updated: rows.length - inserted };
   }
 
-  async listOpportunities(filter: OpportunityFilter = {}) {
-    let q = this.db.from("opportunities").select("*");
+  async listStudies(filter: StudyFilter = {}) {
+    let q = this.db.from("studies").select("*");
 
     if (filter.source) q = q.eq("source", filter.source);
-    if (filter.status) q = q.eq("status", filter.status);
+    if (filter.representation) q = q.eq("representation", filter.representation);
+    if (filter.studyType) q = q.eq("study_type", filter.studyType);
     if (filter.minConfidence !== undefined) q = q.gte("confidence", filter.minConfidence);
-    if (filter.discipline) q = q.contains("disciplines", [filter.discipline]);
+    if (filter.condition) q = q.eq("condition_key", normaliseCondition(filter.condition));
     if (filter.q) {
       const term = `%${filter.q.replace(/[%_]/g, "")}%`;
-      q = q.or(`title.ilike.${term},funder.ilike.${term},summary.ilike.${term}`);
+      q = q.or(`title.ilike.${term},condition.ilike.${term},population_note.ilike.${term}`);
     }
 
     const { data, error } = await q
-      // Ordered again below by the shared comparator; this clause exists so the
-      // partial deadline index does the paging work rather than a full sort.
-      .order("deadline", { ascending: true, nullsFirst: false })
+      .order("year", { ascending: false, nullsFirst: false })
       .range(filter.offset ?? 0, (filter.offset ?? 0) + (filter.limit ?? 100) - 1);
 
     if (error) throw new Error(`supabase select failed: ${error.message}`);
-    return ((data ?? []) as Opportunity[]).sort((a, b) => compareOpportunities(a, b));
+    // Ordered again by the shared comparator so both stores agree exactly.
+    return ((data ?? []) as Study[]).sort(compareStudies);
   }
 
-  async getOpportunity(id: string) {
-    const { data, error } = await this.db
-      .from("opportunities")
-      .select("*")
-      .eq("id", id)
-      .maybeSingle();
+  async getStudy(id: string) {
+    const { data, error } = await this.db.from("studies").select("*").eq("id", id).maybeSingle();
     if (error) throw new Error(`supabase select failed: ${error.message}`);
-    return (data as Opportunity) ?? null;
+    return (data as Study) ?? null;
   }
 
   async knownHashes() {
-    const { data, error } = await this.db.from("opportunities").select("id,content_hash");
+    const { data, error } = await this.db.from("studies").select("id,content_hash");
     if (error) throw new Error(`supabase select failed: ${error.message}`);
     return new Map((data ?? []).map((r) => [r.id as string, r.content_hash as string]));
   }
 
-  async listProfiles() {
-    const { data, error } = await this.db.from("profiles").select("*");
-    if (error) throw new Error(`supabase select failed: ${error.message}`);
-    return (data ?? []) as Profile[];
+  async saveGaps(gaps: Gap[]) {
+    // Derived data: replace the set rather than merge, so a condition that stops
+    // appearing does not linger as a stale row.
+    const { error: clearError } = await this.db.from("gaps").delete().neq("condition", "");
+    if (clearError) throw new Error(`supabase delete failed: ${clearError.message}`);
+    if (gaps.length === 0) return;
+
+    const { error } = await this.db.from("gaps").insert(gaps);
+    if (error) throw new Error(`supabase insert failed: ${error.message}`);
   }
 
-  async upsertProfile(profile: Profile) {
-    const { error } = await this.db.from("profiles").upsert(profile, { onConflict: "id" });
-    if (error) throw new Error(`supabase upsert failed: ${error.message}`);
-  }
-
-  async saveMatches(matches: Match[]) {
-    if (matches.length === 0) return;
-    const { error } = await this.db
-      .from("matches")
-      .upsert(matches, { onConflict: "opportunity_id,profile_id" });
-    if (error) throw new Error(`supabase upsert failed: ${error.message}`);
-  }
-
-  async listMatches(profileId: string, limit = 50) {
+  async listGaps(limit = 50) {
     const { data, error } = await this.db
-      .from("matches")
+      .from("gaps")
       .select("*")
-      .eq("profile_id", profileId)
-      .order("score", { ascending: false })
+      .order("gap_score", { ascending: false })
       .limit(limit);
     if (error) throw new Error(`supabase select failed: ${error.message}`);
-    return (data ?? []) as Match[];
+    return (data ?? []) as Gap[];
   }
 
   async startRun(run: IngestRun) {

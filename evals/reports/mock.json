@@ -1,285 +1,544 @@
 {
   "provider": "mock",
-  "model": "rule-based-v1",
-  "run_at": "2026-08-30T15:05:49.742Z",
-  "overall": 0.9312169312169313,
+  "model": "rule-based-v2",
+  "run_at": "2026-08-30T18:45:08.031Z",
+  "overall": 0.9,
   "fieldScores": {
-    "award": 0.8333333333333334,
-    "deadline": 1,
-    "disciplines": 0.9206349206349208,
-    "funder": 0.8333333333333334,
-    "status": 1,
-    "summary": 1
+    "condition": 0.9166666666666666,
+    "countries": 0.7777777777777778,
+    "representation": 0.7692307692307693,
+    "sample_size": 1,
+    "study_type": 0.9230769230769231,
+    "year": 1
   },
-  "counts": {
-    "graded": 6,
-    "hallucinated": 1
+  "confusions": {
+    "none→unclear": 1,
+    "primary→partial": 2
   },
   "results": [
     {
-      "fixture": "nsf__cise-core-2026",
+      "ref": "NCT05359432",
+      "source": "clinicaltrials",
       "outcome": "graded",
-      "confidence": 0.5,
+      "confidence": 0.62,
       "grades": [
         {
-          "field": "funder",
+          "field": "condition",
           "score": 1,
-          "expected": "National Science Foundation",
-          "got": "National Science Foundation"
+          "expected": "type 2 diabetes",
+          "got": "type 2 diabetes"
         },
         {
-          "field": "deadline",
+          "field": "study_type",
           "score": 1,
-          "expected": "2026-11-18",
-          "got": "2026-11-18"
+          "expected": "interventional",
+          "got": "interventional"
         },
         {
-          "field": "status",
+          "field": "sample_size",
           "score": 1,
-          "expected": "open",
-          "got": "open"
+          "expected": "120",
+          "got": "120"
         },
         {
-          "field": "award",
-          "score": 0.6666666666666666,
-          "expected": "250000–1200000 USD",
-          "got": "250000–95000000 USD"
-        },
-        {
-          "field": "disciplines",
-          "score": 0.8571428571428571,
-          "expected": "computer science, engineering, mathematics, robotics",
-          "got": "mathematics, engineering, robotics"
-        },
-        {
-          "field": "summary",
+          "field": "countries",
           "score": 1,
-          "expected": "≥60 chars",
-          "got": "579 chars"
+          "expected": "Pakistan",
+          "got": "Pakistan"
+        },
+        {
+          "field": "year",
+          "score": 1,
+          "expected": "2020",
+          "got": "2020"
+        },
+        {
+          "field": "representation",
+          "score": 1,
+          "expected": "primary",
+          "got": "primary"
         }
       ]
     },
     {
-      "fixture": "nsf__climate-observatory",
+      "ref": "NCT06496893",
+      "source": "clinicaltrials",
       "outcome": "graded",
-      "confidence": 0.55,
+      "confidence": 0.62,
       "grades": [
         {
-          "field": "funder",
-          "score": 1,
-          "expected": "National Science Foundation",
-          "got": "National Science Foundation"
+          "field": "condition",
+          "score": 0,
+          "expected": "type 2 diabetes",
+          "got": "pre diabetes"
         },
         {
-          "field": "deadline",
+          "field": "study_type",
           "score": 1,
-          "expected": "2026-09-14",
-          "got": "2026-09-14"
+          "expected": "interventional",
+          "got": "interventional"
         },
         {
-          "field": "status",
+          "field": "sample_size",
           "score": 1,
-          "expected": "open",
-          "got": "open"
+          "expected": "100",
+          "got": "100"
         },
         {
-          "field": "award",
+          "field": "countries",
           "score": 1,
-          "expected": "4000000–20000000 USD",
-          "got": "4000000–20000000 USD"
+          "expected": "India",
+          "got": "India"
         },
         {
-          "field": "disciplines",
+          "field": "year",
           "score": 1,
-          "expected": "climate, chemistry, materials science, engineering, physics",
-          "got": "chemistry, physics, engineering, climate, materials science"
+          "expected": "2024",
+          "got": "2024"
         },
         {
-          "field": "summary",
+          "field": "representation",
           "score": 1,
-          "expected": "≥60 chars",
-          "got": "498 chars"
+          "expected": "primary",
+          "got": "primary"
         }
       ]
     },
     {
-      "fixture": "ukri__discovery-fellowship",
+      "ref": "NCT06744179",
+      "source": "clinicaltrials",
       "outcome": "graded",
-      "confidence": 0.55,
+      "confidence": 0.62,
       "grades": [
         {
-          "field": "funder",
+          "field": "condition",
           "score": 1,
-          "expected": "UK Research and Innovation",
-          "got": "UKRI"
+          "expected": "tuberculosis",
+          "got": "tuberculosis, pulmonary"
         },
         {
-          "field": "deadline",
+          "field": "study_type",
           "score": 1,
-          "expected": "2026-10-22",
-          "got": "2026-10-22"
+          "expected": "observational",
+          "got": "observational"
         },
         {
-          "field": "status",
+          "field": "sample_size",
           "score": 1,
-          "expected": "open",
-          "got": "open"
+          "expected": "600",
+          "got": "600"
         },
         {
-          "field": "award",
+          "field": "countries",
           "score": 1,
-          "expected": "400000–1200000 GBP",
-          "got": "400000–1200000 GBP"
+          "expected": "Bangladesh",
+          "got": "Bangladesh"
         },
         {
-          "field": "disciplines",
+          "field": "year",
           "score": 1,
-          "expected": "biology, medicine, neuroscience, genomics",
-          "got": "biology, medicine, neuroscience, genomics"
+          "expected": "2024",
+          "got": "2024"
         },
         {
-          "field": "summary",
+          "field": "representation",
           "score": 1,
-          "expected": "≥60 chars",
-          "got": "359 chars"
+          "expected": "primary",
+          "got": "primary"
         }
       ]
     },
     {
-      "fixture": "ukri__data-science-network",
+      "ref": "NCT06717698",
+      "source": "clinicaltrials",
       "outcome": "graded",
-      "confidence": 0.55,
+      "confidence": 0.62,
       "grades": [
         {
-          "field": "funder",
+          "field": "condition",
           "score": 1,
-          "expected": "UK Research and Innovation",
-          "got": "UKRI"
+          "expected": "chronic kidney disease",
+          "got": "chronic kidney disease"
         },
         {
-          "field": "deadline",
+          "field": "study_type",
+          "score": 1,
+          "expected": "interventional",
+          "got": "interventional"
+        },
+        {
+          "field": "sample_size",
+          "score": 1,
+          "expected": "465",
+          "got": "465"
+        },
+        {
+          "field": "year",
+          "score": 1,
+          "expected": "2024",
+          "got": "2024"
+        },
+        {
+          "field": "representation",
+          "score": 1,
+          "expected": "partial",
+          "got": "partial"
+        }
+      ]
+    },
+    {
+      "ref": "NCT02581527",
+      "source": "clinicaltrials",
+      "outcome": "graded",
+      "confidence": 0.62,
+      "grades": [
+        {
+          "field": "condition",
+          "score": 1,
+          "expected": "tuberculosis",
+          "got": "pulmonary tuberculosis"
+        },
+        {
+          "field": "study_type",
+          "score": 1,
+          "expected": "interventional",
+          "got": "interventional"
+        },
+        {
+          "field": "sample_size",
+          "score": 1,
+          "expected": "672",
+          "got": "672"
+        },
+        {
+          "field": "year",
+          "score": 1,
+          "expected": "2017",
+          "got": "2017"
+        },
+        {
+          "field": "representation",
+          "score": 1,
+          "expected": "partial",
+          "got": "partial"
+        }
+      ]
+    },
+    {
+      "ref": "NCT05118490",
+      "source": "clinicaltrials",
+      "outcome": "graded",
+      "confidence": 0.62,
+      "grades": [
+        {
+          "field": "condition",
+          "score": 1,
+          "expected": "tuberculosis",
+          "got": "hiv seropositivity"
+        },
+        {
+          "field": "study_type",
+          "score": 1,
+          "expected": "interventional",
+          "got": "interventional"
+        },
+        {
+          "field": "sample_size",
+          "score": 1,
+          "expected": "1000",
+          "got": "1000"
+        },
+        {
+          "field": "year",
+          "score": 1,
+          "expected": "2023",
+          "got": "2023"
+        },
+        {
+          "field": "representation",
+          "score": 1,
+          "expected": "partial",
+          "got": "partial"
+        }
+      ]
+    },
+    {
+      "ref": "NCT06186102",
+      "source": "clinicaltrials",
+      "outcome": "graded",
+      "confidence": 0.62,
+      "grades": [
+        {
+          "field": "study_type",
+          "score": 1,
+          "expected": "interventional",
+          "got": "interventional"
+        },
+        {
+          "field": "sample_size",
+          "score": 1,
+          "expected": "187",
+          "got": "187"
+        },
+        {
+          "field": "countries",
+          "score": 1,
+          "expected": "Denmark",
+          "got": "Denmark"
+        },
+        {
+          "field": "year",
+          "score": 1,
+          "expected": "2024",
+          "got": "2024"
+        },
+        {
+          "field": "representation",
+          "score": 1,
+          "expected": "none",
+          "got": "none"
+        }
+      ]
+    },
+    {
+      "ref": "NCT01947595",
+      "source": "clinicaltrials",
+      "outcome": "graded",
+      "confidence": 0.62,
+      "grades": [
+        {
+          "field": "condition",
+          "score": 1,
+          "expected": "type 2 diabetes",
+          "got": "diabetes mellitus type 2"
+        },
+        {
+          "field": "study_type",
+          "score": 1,
+          "expected": "interventional",
+          "got": "interventional"
+        },
+        {
+          "field": "sample_size",
+          "score": 1,
+          "expected": "1145",
+          "got": "1145"
+        },
+        {
+          "field": "countries",
+          "score": 1,
+          "expected": "Germany",
+          "got": "Germany"
+        },
+        {
+          "field": "year",
+          "score": 1,
+          "expected": "2012",
+          "got": "2012"
+        },
+        {
+          "field": "representation",
+          "score": 1,
+          "expected": "none",
+          "got": "none"
+        }
+      ]
+    },
+    {
+      "ref": "NCT03959501",
+      "source": "clinicaltrials",
+      "outcome": "graded",
+      "confidence": 0.62,
+      "grades": [
+        {
+          "field": "condition",
+          "score": 1,
+          "expected": "type 2 diabetes",
+          "got": "type 2 diabetes"
+        },
+        {
+          "field": "study_type",
+          "score": 1,
+          "expected": "interventional",
+          "got": "interventional"
+        },
+        {
+          "field": "sample_size",
+          "score": 1,
+          "expected": "60",
+          "got": "60"
+        },
+        {
+          "field": "countries",
+          "score": 1,
+          "expected": "Hong Kong",
+          "got": "Hong Kong"
+        },
+        {
+          "field": "year",
+          "score": 1,
+          "expected": "2017",
+          "got": "2017"
+        },
+        {
+          "field": "representation",
+          "score": 1,
+          "expected": "none",
+          "got": "none"
+        }
+      ]
+    },
+    {
+      "ref": "42250284",
+      "source": "europepmc",
+      "outcome": "graded",
+      "confidence": 0.44,
+      "grades": [
+        {
+          "field": "condition",
+          "score": 1,
+          "expected": "type 2 diabetes",
+          "got": "incretins for type 2 diabetes."
+        },
+        {
+          "field": "study_type",
+          "score": 0,
+          "expected": "review",
+          "got": "other"
+        },
+        {
+          "field": "sample_size",
           "score": 1,
           "expected": "—",
           "got": "—"
         },
         {
-          "field": "status",
+          "field": "countries",
           "score": 1,
-          "expected": "rolling",
-          "got": "rolling"
+          "expected": "—",
+          "got": "—"
         },
         {
-          "field": "award",
-          "score": 0.6666666666666666,
-          "expected": "—–750000 GBP",
-          "got": "750000–750000 GBP"
+          "field": "year",
+          "score": 1,
+          "expected": "2026",
+          "got": "2026"
         },
         {
-          "field": "disciplines",
+          "field": "representation",
           "score": 1,
-          "expected": "computer science, mathematics, economics, psychology, energy",
-          "got": "mathematics, computer science, economics, psychology, energy"
-        },
-        {
-          "field": "summary",
-          "score": 1,
-          "expected": "≥60 chars",
-          "got": "384 chars"
+          "expected": "unclear",
+          "got": "unclear"
         }
       ]
     },
     {
-      "fixture": "wellcome__mental-health-award",
+      "ref": "42573997",
+      "source": "europepmc",
       "outcome": "graded",
-      "confidence": 0.45,
+      "confidence": 0.44,
       "grades": [
         {
-          "field": "funder",
+          "field": "condition",
           "score": 1,
-          "expected": "Wellcome Trust",
-          "got": "Wellcome Trust"
+          "expected": "type 2 diabetes",
+          "got": "medicare advantage and type 2 diabetes outcomes."
         },
         {
-          "field": "deadline",
+          "field": "study_type",
           "score": 1,
-          "expected": "2026-12-09",
-          "got": "2026-12-09"
+          "expected": "observational",
+          "got": "observational"
         },
         {
-          "field": "status",
-          "score": 1,
-          "expected": "open",
-          "got": "open"
-        },
-        {
-          "field": "award",
-          "score": 1,
-          "expected": "150000–3000000 GBP",
-          "got": "150000–3000000 GBP"
-        },
-        {
-          "field": "disciplines",
-          "score": 1,
-          "expected": "neuroscience, psychology",
-          "got": "neuroscience, psychology"
-        },
-        {
-          "field": "summary",
-          "score": 1,
-          "expected": "≥60 chars",
-          "got": "323 chars"
-        }
-      ]
-    },
-    {
-      "fixture": "wellcome__closed-archive",
-      "outcome": "graded",
-      "confidence": 0.4,
-      "grades": [
-        {
-          "field": "funder",
+          "field": "countries",
           "score": 0,
-          "expected": "Wellcome Trust",
-          "got": "Unknown funder"
+          "expected": "United States",
+          "got": "—"
         },
         {
-          "field": "deadline",
+          "field": "year",
           "score": 1,
-          "expected": "2024-05-30",
-          "got": "2024-05-30"
+          "expected": "2026",
+          "got": "2026"
         },
         {
-          "field": "status",
-          "score": 1,
-          "expected": "closed",
-          "got": "closed"
-        },
-        {
-          "field": "award",
-          "score": 0.6666666666666666,
-          "expected": "—–2500000 GBP",
-          "got": "2500000–2500000 GBP"
-        },
-        {
-          "field": "disciplines",
-          "score": 0.6666666666666666,
-          "expected": "climate, medicine",
-          "got": "climate"
-        },
-        {
-          "field": "summary",
-          "score": 1,
-          "expected": "≥60 chars",
-          "got": "323 chars"
+          "field": "representation",
+          "score": 0,
+          "expected": "none",
+          "got": "unclear"
         }
       ]
     },
     {
-      "fixture": "nsf__listing-index",
-      "outcome": "hallucinated",
-      "confidence": 0.55,
-      "grades": [],
-      "detail": "claimed Find Funding"
+      "ref": "42541604",
+      "source": "europepmc",
+      "outcome": "graded",
+      "confidence": 0.44,
+      "grades": [
+        {
+          "field": "condition",
+          "score": 1,
+          "expected": "type 2 diabetes",
+          "got": "prevalence of undiagnosed type 2 diabetes in south asia"
+        },
+        {
+          "field": "study_type",
+          "score": 1,
+          "expected": "review",
+          "got": "review"
+        },
+        {
+          "field": "year",
+          "score": 1,
+          "expected": "2026",
+          "got": "2026"
+        },
+        {
+          "field": "representation",
+          "score": 0,
+          "expected": "primary",
+          "got": "partial"
+        }
+      ]
+    },
+    {
+      "ref": "42339287",
+      "source": "europepmc",
+      "outcome": "graded",
+      "confidence": 0.44,
+      "grades": [
+        {
+          "field": "condition",
+          "score": 1,
+          "expected": "drug allergy",
+          "got": "the prevalence and risk factors of drug allergy in sri lanka-a multi-centre cross-sectional observational study (2024-2025)."
+        },
+        {
+          "field": "study_type",
+          "score": 1,
+          "expected": "observational",
+          "got": "observational"
+        },
+        {
+          "field": "countries",
+          "score": 0,
+          "expected": "Sri Lanka",
+          "got": "—"
+        },
+        {
+          "field": "year",
+          "score": 1,
+          "expected": "2026",
+          "got": "2026"
+        },
+        {
+          "field": "representation",
+          "score": 0,
+          "expected": "primary",
+          "got": "partial"
+        }
+      ]
     }
   ]
 }

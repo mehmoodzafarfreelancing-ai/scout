@@ -1,10 +1,11 @@
-import type { IngestRun, Match, Opportunity, Profile } from "./types";
+import type { Gap, IngestRun, Study } from "./types";
 
-export type OpportunityFilter = {
+export type StudyFilter = {
   q?: string;
   source?: string;
-  status?: string;
-  discipline?: string;
+  condition?: string;
+  representation?: string;
+  studyType?: string;
   minConfidence?: number;
   limit?: number;
   offset?: number;
@@ -20,17 +21,14 @@ export type OpportunityFilter = {
 export interface Repo {
   readonly name: string;
 
-  upsertOpportunities(rows: Opportunity[]): Promise<{ inserted: number; updated: number }>;
-  listOpportunities(filter?: OpportunityFilter): Promise<Opportunity[]>;
-  getOpportunity(id: string): Promise<Opportunity | null>;
-  /** content_hash by id, so a re-crawl can skip pages that haven't changed. */
+  upsertStudies(rows: Study[]): Promise<{ inserted: number; updated: number }>;
+  listStudies(filter?: StudyFilter): Promise<Study[]>;
+  getStudy(id: string): Promise<Study | null>;
+  /** content_hash by id, so a re-crawl can skip records that haven't changed. */
   knownHashes(): Promise<Map<string, string>>;
 
-  listProfiles(): Promise<Profile[]>;
-  upsertProfile(profile: Profile): Promise<void>;
-
-  saveMatches(matches: Match[]): Promise<void>;
-  listMatches(profileId: string, limit?: number): Promise<Match[]>;
+  saveGaps(gaps: Gap[]): Promise<void>;
+  listGaps(limit?: number): Promise<Gap[]>;
 
   startRun(run: IngestRun): Promise<void>;
   finishRun(run: IngestRun): Promise<void>;

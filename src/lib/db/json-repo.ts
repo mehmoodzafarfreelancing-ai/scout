@@ -1,25 +1,25 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { compareOpportunities } from "./ordering";
-import type { OpportunityFilter, Repo } from "./repo";
-import type { IngestRun, Match, Opportunity, Profile } from "./types";
+import { normaliseCondition } from "@/lib/pipeline/gaps";
+import { compareStudies } from "./ordering";
+import type { Repo, StudyFilter } from "./repo";
+import type { Gap, IngestRun, Study } from "./types";
 
 type Shape = {
-  opportunities: Opportunity[];
-  profiles: Profile[];
-  matches: Match[];
+  studies: Study[];
+  gaps: Gap[];
   runs: IngestRun[];
 };
 
-const EMPTY: Shape = { opportunities: [], profiles: [], matches: [], runs: [] };
+const EMPTY: Shape = { studies: [], gaps: [], runs: [] };
 
 /**
  * File-backed store used when no Supabase credentials are present.
  *
- * Writes go through a temp file + rename so an interrupted run (Ctrl-C during a
- * crawl, which happens constantly in development) can't leave a half-written
- * JSON file behind. Reads are serialised through a single promise chain so
- * concurrent upserts from the pipeline don't clobber each other.
+ * Writes go through a temp file plus a rename, so an interrupted run cannot
+ * leave a half-written JSON file behind. Reads and writes are serialised
+ * through a single promise chain so concurrent upserts from the pipeline do not
+ * clobber each other.
  */
 export class JsonRepo implements Repo {
   readonly name = "json";
@@ -56,18 +56,18 @@ export class JsonRepo implements Repo {
     return next;
   }
 
-  async upsertOpportunities(rows: Opportunity[]) {
+  async upsertStudies(rows: Study[]) {
     return this.mutate((data) => {
       let inserted = 0;
       let updated = 0;
       for (const row of rows) {
-        const i = data.opportunities.findIndex((o) => o.id === row.id);
+        const i = data.studies.findIndex((s) => s.id === row.id);
         if (i === -1) {
-          data.opportunities.push(row);
+          data.studies.push(row);
           inserted++;
         } else {
           // Preserve the original sighting date; everything else is fresher.
-          data.opportunities[i] = { ...row, first_seen_at: data.opportunities[i]!.first_seen_at };
+          data.studies[i] = { ...row, first_seen_at: data.studies[i]!.first_seen_at };
           updated++;
         }
       }
@@ -75,51 +75,33 @@ export class JsonRepo implements Repo {
     });
   }
 
-  async listOpportunities(filter: OpportunityFilter = {}) {
-    const { opportunities } = await this.read();
-    return applyFilter(opportunities, filter);
+  async listStudies(filter: StudyFilter = {}) {
+    const { studies } = await this.read();
+    return applyFilter(studies, filter);
   }
 
-  async getOpportunity(id: string) {
-    const { opportunities } = await this.read();
-    return opportunities.find((o) => o.id === id) ?? null;
+  async getStudy(id: string) {
+    const { studies } = await this.read();
+    return studies.find((s) => s.id === id) ?? null;
   }
 
   async knownHashes() {
-    const { opportunities } = await this.read();
-    return new Map(opportunities.map((o) => [o.id, o.content_hash]));
+    const { studies } = await this.read();
+    return new Map(studies.map((s) => [s.id, s.content_hash]));
   }
 
-  async listProfiles() {
-    return (await this.read()).profiles;
-  }
-
-  async upsertProfile(profile: Profile) {
+  async saveGaps(gaps: Gap[]) {
+    // Gaps are derived, so a fresh computation replaces the set outright rather
+    // than merging. Merging would leave stale conditions behind after a source
+    // stops returning them.
     await this.mutate((data) => {
-      const i = data.profiles.findIndex((p) => p.id === profile.id);
-      if (i === -1) data.profiles.push(profile);
-      else data.profiles[i] = profile;
+      data.gaps = gaps;
     });
   }
 
-  async saveMatches(matches: Match[]) {
-    await this.mutate((data) => {
-      for (const m of matches) {
-        const i = data.matches.findIndex(
-          (x) => x.opportunity_id === m.opportunity_id && x.profile_id === m.profile_id,
-        );
-        if (i === -1) data.matches.push(m);
-        else data.matches[i] = m;
-      }
-    });
-  }
-
-  async listMatches(profileId: string, limit = 50) {
-    const { matches } = await this.read();
-    return matches
-      .filter((m) => m.profile_id === profileId)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, limit);
+  async listGaps(limit = 50) {
+    const { gaps } = await this.read();
+    return [...gaps].sort((a, b) => b.gap_score - a.gap_score).slice(0, limit);
   }
 
   async startRun(run: IngestRun) {
@@ -142,22 +124,25 @@ export class JsonRepo implements Repo {
   }
 }
 
-export function applyFilter(rows: Opportunity[], f: OpportunityFilter): Opportunity[] {
+export function applyFilter(rows: Study[], f: StudyFilter): Study[] {
   const q = f.q?.toLowerCase().trim();
-  const out = rows.filter((o) => {
-    if (f.source && o.source !== f.source) return false;
-    if (f.status && o.status !== f.status) return false;
-    if (f.minConfidence !== undefined && o.confidence < f.minConfidence) return false;
-    if (f.discipline && !o.disciplines.some((d) => d.toLowerCase() === f.discipline!.toLowerCase()))
-      return false;
+  const condition = f.condition ? normaliseCondition(f.condition) : undefined;
+
+  const out = rows.filter((s) => {
+    if (f.source && s.source !== f.source) return false;
+    if (f.representation && s.representation !== f.representation) return false;
+    if (f.studyType && s.study_type !== f.studyType) return false;
+    if (f.minConfidence !== undefined && s.confidence < f.minConfidence) return false;
+    if (condition && normaliseCondition(s.condition) !== condition) return false;
     if (q) {
-      const hay = `${o.title} ${o.funder} ${o.summary} ${o.disciplines.join(" ")}`.toLowerCase();
+      const hay =
+        `${s.title} ${s.condition} ${s.intervention ?? ""} ${s.population_note} ${s.countries.join(" ")}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
   });
 
-  out.sort((a, b) => compareOpportunities(a, b));
+  out.sort(compareStudies);
 
   const start = f.offset ?? 0;
   return out.slice(start, start + (f.limit ?? 100));

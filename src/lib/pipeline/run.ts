@@ -1,21 +1,34 @@
 import { config } from "@/lib/config";
 import { getWriteRepo } from "@/lib/db";
-import { ExtractedOpportunity, type IngestRun, type Opportunity } from "@/lib/db/types";
+import { ExtractedStudy, type IngestRun, type Study } from "@/lib/db/types";
 import { createLlmClient, extractStructured } from "@/lib/llm";
-import { createScraper, exaSearch, type Scraper } from "@/lib/scrape";
-import { contentHash, opportunityId, runId } from "./ids";
-import { scoreAll } from "./match";
-import { MIN_CONFIDENCE, MIN_PAGE_CHARS } from "./thresholds";
-import { SOURCES, selectCandidates, sourceById, type Source } from "./sources";
+import { createScraper, type Scraper } from "@/lib/scrape";
+import { computeGaps } from "./gaps";
+import { contentHash, runId, studyId } from "./ids";
+import { fixtureSources } from "./fixture-source";
+import {
+  SOURCES,
+  SOUTH_ASIA,
+  TRACKED_CONDITIONS,
+  enrich,
+  sourceById,
+  type Source,
+  type SourceDocument,
+} from "./sources";
+import { MIN_CONFIDENCE, MIN_RECORD_CHARS } from "./thresholds";
 
 export type RunOptions = {
   trigger: IngestRun["trigger"];
-  /** Restrict to specific source ids. Empty = all registered sources. */
+  /** Restrict to specific source ids. Empty means all registered sources. */
   sources?: string[];
-  /** Extract even when the page content hash is unchanged. */
+  /** Restrict to specific conditions. Empty means all tracked conditions. */
+  conditions?: string[];
+  /** Extract even when the record hash is unchanged. */
   force?: boolean;
   /** Hard ceiling on LLM calls for this run. Protects the free tier. */
   budget?: number;
+  /** Records to request per source, per condition. */
+  perCondition?: number;
 };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -25,97 +38,152 @@ export async function runIngest(opts: RunOptions): Promise<IngestRun> {
   const scraper = await createScraper();
   const llm = createLlmClient();
 
+  // With no keys the pipeline replays captured API responses, so a fresh clone
+  // runs the whole thing offline. Same code path, different documents.
+  const offline = config.scrape.provider === "fixture";
+  const registry: Source[] = offline ? await fixtureSources() : SOURCES;
+
   const run: IngestRun = {
     id: runId(),
     started_at: new Date().toISOString(),
     finished_at: null,
     trigger: opts.trigger,
-    scrape_provider: scraper.name,
+    scrape_provider: offline ? "fixture" : scraper.name,
     llm_provider: `${llm.name}:${llm.model}`,
-    pages_fetched: 0,
-    pages_skipped: 0,
+    records_seen: 0,
+    records_skipped: 0,
+    enriched: 0,
     extracted: 0,
     rejected: 0,
     errors: [],
   };
   await repo.startRun(run);
 
-  const targets = opts.sources?.length
-    ? opts.sources.map(sourceById).filter((s): s is Source => Boolean(s))
-    : SOURCES;
+  const sources = opts.sources?.length
+    ? opts.sources.map((id) => registry.find((s) => s.id === id) ?? sourceById(id)).filter((s): s is Source => Boolean(s))
+    : registry;
+  const conditions = opts.conditions?.length ? opts.conditions : TRACKED_CONDITIONS;
 
   let budget = opts.budget ?? 60;
   const known = await repo.knownHashes();
-  const harvested: Opportunity[] = [];
+  const harvested: Study[] = [];
 
   try {
-    for (const source of targets) {
-      const candidates = await discoverFor(scraper, source, run);
-      console.log(`[ingest] ${source.id}: ${candidates.length} candidate page(s)`);
+    for (const source of sources) {
+      for (const condition of conditions) {
+        if (budget <= 0) break;
 
-      for (const url of candidates) {
-        if (budget <= 0) {
-          run.errors.push(`budget exhausted before finishing ${source.id}`);
-          break;
+        // Two passes. The broad one shows what the literature looks like; the
+        // region-targeted one finds work that would never rank highly enough to
+        // appear in it. Comparing them is the whole analysis.
+        const passes: { region?: string[] }[] = [{}, { region: SOUTH_ASIA }];
+        const documents: SourceDocument[] = [];
+        const seenRefs = new Set<string>();
+
+        for (const pass of passes) {
+          try {
+            const found = await source.collect({
+              query: condition,
+              limit: opts.perCondition ?? 6,
+              ...pass,
+            });
+            for (const doc of found) {
+              // The same trial answers both passes. Keeping it twice would
+              // double-count it in the gap arithmetic.
+              if (seenRefs.has(doc.ref)) continue;
+              seenRefs.add(doc.ref);
+              documents.push(doc);
+            }
+          } catch (err) {
+            run.errors.push(`${source.id}/${condition}: ${String(err).slice(0, 160)}`);
+          }
+          if (!offline) await sleep(config.scrape.delayMs);
         }
 
-        try {
-          const page = await scraper.fetchPage(url, source.id);
-          run.pages_fetched++;
-          await sleep(config.scrape.delayMs);
+        console.log(`[ingest] ${source.id} · ${condition}: ${documents.length} record(s)`);
 
-          if (page.text.length < MIN_PAGE_CHARS) {
-            run.pages_skipped++;
-            continue;
+        for (const doc of documents) {
+          if (budget <= 0) {
+            run.errors.push(`budget exhausted during ${source.id}/${condition}`);
+            break;
           }
 
-          const id = opportunityId(source.id, url);
-          const hash = contentHash(page.text);
+          run.records_seen++;
+          const id = studyId(source.id, doc.ref);
 
-          // The single biggest cost saving in the pipeline: unchanged pages
-          // never reach the model.
-          if (!opts.force && known.get(id) === hash) {
-            run.pages_skipped++;
-            continue;
-          }
+          try {
+            let text = doc.text;
 
-          budget--;
-          const result = await extractStructured(llm, ExtractedOpportunity, page);
+            if (text.length < MIN_RECORD_CHARS && !offline) {
+              const extra = await enrich(scraper, doc);
+              if (extra) {
+                text = `${text}\n\nFull text:\n${extra}`;
+                run.enriched++;
+              }
+            }
 
-          if (!result.ok) {
+            if (text.length < MIN_RECORD_CHARS) {
+              run.records_skipped++;
+              continue;
+            }
+
+            const hash = contentHash(text);
+
+            // The single biggest cost saving: unchanged records never reach the
+            // model. A nightly re-run over a stable corpus spends nothing.
+            if (!opts.force && known.get(id) === hash) {
+              run.records_skipped++;
+              continue;
+            }
+
+            budget--;
+            const result = await extractStructured(llm, ExtractedStudy, {
+              title: doc.title,
+              text,
+              url: doc.url,
+            });
+
+            if (!result.ok) {
+              run.rejected++;
+              run.errors.push(`${doc.ref}: ${result.error.split("\n")[0]}`);
+              continue;
+            }
+            if (result.data.confidence < MIN_CONFIDENCE) {
+              run.rejected++;
+              continue;
+            }
+
+            const now = new Date().toISOString();
+            harvested.push({
+              ...result.data,
+              id,
+              source: source.id,
+              source_ref: doc.ref,
+              source_url: doc.url,
+              content_hash: hash,
+              enriched: text !== doc.text,
+              first_seen_at: now,
+              last_seen_at: now,
+              extracted_by: `${result.meta.provider}:${result.meta.model}`,
+            });
+            run.extracted++;
+          } catch (err) {
             run.rejected++;
-            run.errors.push(`${url}: ${result.error.split("\n")[0]}`);
-            continue;
+            run.errors.push(`${doc.ref}: ${String(err).slice(0, 160)}`);
           }
-          if (result.data.confidence < MIN_CONFIDENCE) {
-            run.rejected++;
-            continue;
-          }
-
-          const now = new Date().toISOString();
-          harvested.push({
-            ...result.data,
-            id,
-            source: source.id,
-            source_url: url,
-            content_hash: hash,
-            first_seen_at: now,
-            last_seen_at: now,
-            extracted_by: `${result.meta.provider}:${result.meta.model}`,
-          });
-          run.extracted++;
-        } catch (err) {
-          run.rejected++;
-          run.errors.push(`${url}: ${String(err).slice(0, 200)}`);
         }
       }
     }
 
     if (harvested.length > 0) {
-      const { inserted, updated } = await repo.upsertOpportunities(harvested);
+      const { inserted, updated } = await repo.upsertStudies(harvested);
       console.log(`[ingest] stored ${inserted} new, ${updated} updated`);
-      await rescore(repo);
     }
+
+    // Gaps are recomputed from the full corpus rather than from this run's rows,
+    // so a partial run cannot leave the analysis describing only what it saw.
+    const all = await repo.listStudies({ limit: 5000 });
+    if (all.length > 0) await repo.saveGaps(computeGaps(all));
   } finally {
     await scraper.dispose?.();
     run.finished_at = new Date().toISOString();
@@ -127,39 +195,4 @@ export async function runIngest(opts: RunOptions): Promise<IngestRun> {
   return run;
 }
 
-async function discoverFor(scraper: Scraper, source: Source, run: IngestRun): Promise<string[]> {
-  const found = new Set<string>();
-
-  try {
-    const links = await scraper.discover(source.seed, source.id);
-    // Fixture URLs are already source-scoped by filename, so the live-site URL
-    // patterns would reject every one of them.
-    const candidates =
-      scraper.name === "fixture" ? links.slice(0, source.maxPages) : selectCandidates(source, links);
-    for (const url of candidates) found.add(url);
-  } catch (err) {
-    run.errors.push(`discover ${source.id}: ${String(err).slice(0, 200)}`);
-  }
-
-  // Exa fills gaps the seed listing doesn't link. Best-effort, never fatal.
-  if (source.discoveryQuery && found.size < source.maxPages) {
-    const hits = await exaSearch(source.discoveryQuery, source.maxPages).catch(() => []);
-    for (const url of selectCandidates(source, hits.map((h) => h.url))) {
-      if (found.size >= source.maxPages) break;
-      found.add(url);
-    }
-  }
-
-  return [...found].slice(0, source.maxPages);
-}
-
-/** Re-score every profile against the full corpus after new rows land. */
-async function rescore(repo: Awaited<ReturnType<typeof getWriteRepo>>): Promise<void> {
-  const [profiles, opportunities] = await Promise.all([
-    repo.listProfiles(),
-    repo.listOpportunities({ limit: 1000 }),
-  ]);
-  for (const profile of profiles) {
-    await repo.saveMatches(scoreAll(opportunities, profile));
-  }
-}
+export type { Scraper };

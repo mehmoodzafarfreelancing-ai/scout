@@ -1,76 +1,164 @@
 {
   "$comment": [
-    "Hand-labelled ground truth for the bundled fixtures.",
+    "Hand-labelled ground truth over real captured records in fixtures/records.json.",
     "",
-    "Labels record what a careful human reading the page would write down, not",
-    "what any particular extractor happens to produce. Where a page states more",
-    "than one date, the label is the one an applicant must actually meet.",
+    "Every value here was read off the source record, not guessed. Where a record",
+    "genuinely does not state a field, the label is null and an extractor that",
+    "invents a value is marked wrong for it.",
     "",
-    "'funder_accept' lists the surface forms that should count as correct, so a",
-    "model answering 'NSF' is not marked wrong against 'National Science",
-    "Foundation'. Grading identity, not string equality."
+    "'representation' is the field the product's conclusions rest on and it is",
+    "graded with no partial credit. The cases are chosen to cover all four states,",
+    "including the ones that are easy to get wrong: multi-country trials where the",
+    "region is one site among fourteen, and reviews that never say who was studied.",
+    "",
+    "'condition_accept' lists surface forms that should count, so an extractor",
+    "answering 'type 2 diabetes' is not marked wrong against 'Diabetes Mellitus,",
+    "Type 2'. Grading meaning, not string equality."
   ],
   "cases": [
     {
-      "fixture": "nsf__cise-core-2026",
+      "ref": "NCT05359432",
+      "source": "clinicaltrials",
       "should_extract": true,
-      "funder_accept": ["National Science Foundation", "NSF"],
-      "deadline": "2026-11-18",
-      "status": "open",
-      "award": { "min": 250000, "max": 1200000, "currency": "USD" },
-      "award_note": "The $95,000,000 on the page is the programme total, not an award ceiling. Getting this right is the clearest thing that separates a language model from a number-grabbing regex.",
-      "disciplines": ["computer science", "engineering", "mathematics", "robotics"]
+      "condition_accept": ["type 2 diabetes", "diabetes mellitus type 2"],
+      "study_type": "interventional",
+      "sample_size": 120,
+      "countries": ["Pakistan"],
+      "representation": "primary",
+      "year": 2020
     },
     {
-      "fixture": "nsf__climate-observatory",
+      "ref": "NCT06496893",
+      "source": "clinicaltrials",
       "should_extract": true,
-      "funder_accept": ["National Science Foundation", "NSF"],
-      "deadline": "2026-09-14",
-      "deadline_note": "Preliminary proposal date. The March 2027 full-proposal date is invitation-only and cannot be met directly.",
-      "status": "open",
-      "award": { "min": 4000000, "max": 20000000, "currency": "USD" },
-      "disciplines": ["climate", "chemistry", "materials science", "engineering", "physics"]
+      "condition_accept": ["type 2 diabetes", "prediabetes", "diabetes mellitus type 2"],
+      "study_type": "interventional",
+      "sample_size": 100,
+      "countries": ["India"],
+      "representation": "primary",
+      "year": 2024
     },
     {
-      "fixture": "ukri__discovery-fellowship",
+      "ref": "NCT06744179",
+      "source": "clinicaltrials",
       "should_extract": true,
-      "funder_accept": ["UK Research and Innovation", "UKRI"],
-      "deadline": "2026-10-22",
-      "status": "open",
-      "award": { "min": 400000, "max": 1200000, "currency": "GBP" },
-      "disciplines": ["biology", "medicine", "neuroscience", "genomics"]
+      "condition_accept": ["tuberculosis", "pulmonary tuberculosis"],
+      "study_type": "observational",
+      "sample_size": 600,
+      "countries": ["Bangladesh"],
+      "representation": "primary",
+      "year": 2024
     },
     {
-      "fixture": "ukri__data-science-network",
+      "ref": "NCT06717698",
+      "source": "clinicaltrials",
       "should_extract": true,
-      "funder_accept": ["UK Research and Innovation", "UKRI"],
-      "deadline": null,
-      "status": "rolling",
-      "award": { "min": null, "max": 750000, "currency": "GBP" },
-      "disciplines": ["computer science", "mathematics", "economics", "psychology", "energy"]
+      "condition_accept": ["chronic kidney disease"],
+      "study_type": "interventional",
+      "sample_size": 465,
+      "representation": "partial",
+      "year": 2024,
+      "note": "India is one recruiting country out of fourteen. This is the case a naive extractor gets wrong in both directions: 'none' because most sites are elsewhere, or 'primary' because India appears at all."
     },
     {
-      "fixture": "wellcome__mental-health-award",
+      "ref": "NCT02581527",
+      "source": "clinicaltrials",
       "should_extract": true,
-      "funder_accept": ["Wellcome Trust", "Wellcome"],
-      "deadline": "2026-12-09",
-      "status": "open",
-      "award": { "min": 150000, "max": 3000000, "currency": "GBP" },
-      "disciplines": ["neuroscience", "psychology"]
+      "condition_accept": ["tuberculosis", "pulmonary tuberculosis"],
+      "study_type": "interventional",
+      "sample_size": 672,
+      "representation": "partial",
+      "year": 2017,
+      "note": "Nepal and Pakistan among six countries."
     },
     {
-      "fixture": "wellcome__closed-archive",
+      "ref": "NCT05118490",
+      "source": "clinicaltrials",
       "should_extract": true,
-      "funder_accept": ["Wellcome Trust", "Wellcome"],
-      "deadline": "2024-05-30",
-      "status": "closed",
-      "award": { "min": null, "max": 2500000, "currency": "GBP" },
-      "disciplines": ["climate", "medicine"]
+      "condition_accept": ["tuberculosis", "hiv", "household contact"],
+      "study_type": "interventional",
+      "sample_size": 1000,
+      "representation": "partial",
+      "year": 2023,
+      "note": "India among four countries."
     },
     {
-      "fixture": "nsf__listing-index",
-      "should_extract": false,
-      "reject_note": "A directory of links, not a funding call. An extractor that confidently invents a record here is worse than one that returns nothing."
+      "ref": "NCT06186102",
+      "source": "clinicaltrials",
+      "should_extract": true,
+      "study_type": "interventional",
+      "sample_size": 187,
+      "countries": ["Denmark"],
+      "representation": "none",
+      "year": 2024,
+      "note": "Condition is deliberately unlabelled: the record lists fourteen of them and there is no single defensible answer, so scoring it would be scoring a coin toss."
+    },
+    {
+      "ref": "NCT01947595",
+      "source": "clinicaltrials",
+      "should_extract": true,
+      "condition_accept": ["type 2 diabetes", "diabetes mellitus type 2"],
+      "study_type": "interventional",
+      "sample_size": 1145,
+      "countries": ["Germany"],
+      "representation": "none",
+      "year": 2012
+    },
+    {
+      "ref": "NCT03959501",
+      "source": "clinicaltrials",
+      "should_extract": true,
+      "condition_accept": ["type 2 diabetes", "ketonemia"],
+      "study_type": "interventional",
+      "sample_size": 60,
+      "countries": ["Hong Kong"],
+      "representation": "none",
+      "year": 2017,
+      "note": "Hong Kong is Asia but not South Asia. A country-list heuristic that matches on 'Asia' fails here."
+    },
+    {
+      "ref": "42250284",
+      "source": "europepmc",
+      "should_extract": true,
+      "condition_accept": ["type 2 diabetes"],
+      "study_type": "review",
+      "sample_size": null,
+      "countries": [],
+      "representation": "unclear",
+      "year": 2026,
+      "note": "A narrative review of incretin therapies. No population at all. Must be 'unclear', never 'none'."
+    },
+    {
+      "ref": "42573997",
+      "source": "europepmc",
+      "should_extract": true,
+      "condition_accept": ["type 2 diabetes"],
+      "study_type": "observational",
+      "countries": ["United States"],
+      "representation": "none",
+      "year": 2026,
+      "note": "The country is never named. It has to be inferred from Medicare and '44 states'. No regex reaches this; it is the clearest single case for the model."
+    },
+    {
+      "ref": "42541604",
+      "source": "europepmc",
+      "should_extract": true,
+      "condition_accept": ["type 2 diabetes"],
+      "study_type": "review",
+      "representation": "primary",
+      "year": 2026,
+      "note": "Systematic review of undiagnosed T2DM across South Asia. Primary, even though no single country is the population."
+    },
+    {
+      "ref": "42339287",
+      "source": "europepmc",
+      "should_extract": true,
+      "condition_accept": ["drug allergy", "allergy"],
+      "study_type": "observational",
+      "countries": ["Sri Lanka"],
+      "representation": "primary",
+      "year": 2026,
+      "note": "Captured under the diabetes query but is actually about drug allergy. Tests whether the extractor reports the condition the paper studied rather than the one we searched for."
     }
   ]
 }

@@ -1,36 +1,41 @@
 # Scout
 
-Finds research funding calls across funder websites, turns each page into a
-structured record with an LLM, and ranks them against a researcher's profile.
-Every score comes with a reason.
+Reads study records from ClinicalTrials.gov and Europe PMC, uses an LLM to work
+out which population was actually recruited, and ranks health conditions by how
+much evidence exists against how little of it reached South Asia.
 
 **Live demo:** _add your Vercel URL here_
 
 ```
-Funder sites ──▶ scrape ──▶ LLM extraction ──▶ dedupe ──▶ Supabase ──▶ dashboard
-                    │            │                │
-             Firecrawl /    schema-guided    content-hash
-             Playwright /   + self-repair    (skip unchanged)
-             plain fetch
+ClinicalTrials.gov ─┐
+                    ├─▶ extract ──▶ dedupe ──▶ Supabase ──▶ gap analysis ──▶ dashboard
+Europe PMC ─────────┘      │           │
+                    schema-guided  content-hash
+                    + self-repair  (skip unchanged)
+                           │
+                    full text via Firecrawl / Playwright
+                    when a record omits its population
 ```
 
-Runs nightly on GitHub Actions. Re-crawls on demand through a signed webhook.
+Runs nightly on GitHub Actions. Re-runs on demand through a signed webhook.
 
 ---
 
 ## Run it in 30 seconds, with no API keys
 
 ```bash
-npm install && npm run ingest:fixtures && npm run seed && npm run dev
+npm install && npm run ingest:fixtures && npm run dev
 ```
 
-That is the real pipeline. Discovery, normalisation, extraction, validation,
-dedupe, storage and scoring, all running against bundled HTML fixtures with a
-deterministic extractor and a local JSON store. No network, no keys, no spend.
+That is the real pipeline. Extraction, validation, dedupe, storage and gap
+analysis, running against 149 **real** records captured from both APIs, with a
+rule-based extractor and a local JSON store. No network, no keys, no spend.
 
-It exists for three reasons. You can evaluate this repo without signing up for
-anything. CI can exercise the whole pipeline for free on every push. And the
-rule-based extractor doubles as the baseline the real model has to beat.
+The fixtures are captured rather than invented, which matters more than it
+looks. Registry data is messy in specific ways: trials that never say where they
+recruited, abstracts that name a country only in an author's address, missing
+enrollment counts. Those are the cases the extractor has to get right and you
+cannot imagine them accurately. Re-capture with `npm run capture`.
 
 ## Going live
 
@@ -41,8 +46,8 @@ and it stays on the fallback.
 | --- | --- | --- |
 | Storage | JSON file at `.data/store.json` | `NEXT_PUBLIC_SUPABASE_URL` + keys, after running [`schema.sql`](src/lib/db/schema.sql) |
 | Extraction | rule-based heuristics | `GEMINI_API_KEY`, or Groq, or OpenRouter |
-| Scraping | bundled fixtures | `FIRECRAWL_API_KEY`, or `SCRAPE_PROVIDER=playwright` |
-| Discovery | seed listing pages only | `EXA_API_KEY` |
+| Records | captured fixtures | nothing. Both APIs are public and free |
+| Full text | skipped | `FIRECRAWL_API_KEY`, or `SCRAPE_PROVIDER=playwright` |
 
 ```bash
 cp .env.example .env.local   # every entry is optional
@@ -52,58 +57,78 @@ npm run ingest               # provider selection is automatic
 The running app shows which providers are live in its header, so a demo that
 behaves oddly tells you why without opening a terminal.
 
+## What it is measuring
+
+Roughly 240 million people in Pakistan are close to absent from the datasets
+that medicines and public-health policy are built on. Scout tries to say where
+that absence is worst, per condition, from evidence rather than assertion.
+
+**Every condition is queried twice.** Once broadly, and once restricted to South
+Asian recruiting sites. The second pass is what surfaces regional work at all,
+because a trial run in Karachi never out-ranks ten thousand trials run
+elsewhere. It also means the corpus deliberately over-represents the region, so
+the dashboard states plainly that its percentages describe the sample and are
+not an estimate of the literature. Reporting them as prevalence would be wrong,
+and the people this is built for would spot it immediately.
+
+**"Did not report" is never counted as "not represented".** A record that never
+said who was enrolled and a record that recruited entirely in Denmark are
+opposite findings. Collapsing them manufactures a gap the evidence never showed.
+Unreported records are excluded from the coverage ratio and surfaced as their
+own number. When nothing in a condition reported, the gap score is zero rather
+than maximum, because an absence that was never measured is not a finding.
+
+**Author affiliation is not participant recruitment.** A trial run entirely in
+Denmark by an author based in Karachi recruited in Denmark. The prompt says so
+explicitly, since a model that reads affiliations as populations inverts the
+entire analysis.
+
 ## How it works
 
-**Sources are data, not code.** A funder is a seed URL plus URL patterns saying
-which links are real detail pages ([`sources.ts`](src/lib/pipeline/sources.ts)).
-Adding one is a config change. A page rejected by a pattern never costs a model
-call.
-
-**One Zod schema, three jobs.** [`ExtractedOpportunity`](src/lib/db/types.ts) is
+**One Zod schema, three jobs.** [`ExtractedStudy`](src/lib/db/types.ts) is
 injected into the prompt as the target shape, validates the response before
 anything reaches the database, and types the UI. Change it and `tsc` finds every
 gap.
 
-**Bad output gets repaired, not discarded.** The failure that matters here is not
-a refusal. It is confident JSON that breaks the contract: a deadline written as
-`"Spring 2026"`, confidence as `"high"`, a missing field. Zod catches that at the
-boundary, and [`extract.ts`](src/lib/llm/extract.ts) hands the model its own
-output plus the specific validation errors and asks for a correction. One repair
-turn recovers most failures, which matters when the budget is a free tier. Before
+**Bad output gets repaired, not discarded.** The failure that matters is not a
+refusal. It is confident JSON that breaks the contract: a year as `"recent"`, a
+representation value that is not one of the four, a missing field. Zod catches
+that at the boundary, and [`extract.ts`](src/lib/llm/extract.ts) hands the model
+its own output plus the specific validation errors and asks for a correction.
+One repair turn recovers most failures, which matters on a free tier. Before
 that, [`json.ts`](src/lib/llm/json.ts) salvages fenced, prose-wrapped and
 trailing-comma output without spending a second call.
 
-**Unchanged pages never reach the model.** Content is hashed with whitespace and
-clock stamps normalised out ([`ids.ts`](src/lib/pipeline/ids.ts)), so a "last
-updated 14:32" ticker does not re-bill the whole corpus every night. This is the
-single largest cost saving in the pipeline.
+**Unchanged records never reach the model.** Content is hashed with whitespace
+and clock stamps normalised out ([`ids.ts`](src/lib/pipeline/ids.ts)). A nightly
+re-run over a stable corpus spends nothing. This is the single largest cost
+saving in the pipeline.
 
-**Scraping degrades instead of failing.** Firecrawl has a hard credit ceiling and
-Playwright cannot run on Vercel, so providers are chained. A retryable failure
-cascades to the next one, and only a total wipeout throws
-([`scrape/index.ts`](src/lib/scrape/index.ts)).
+**Discovery by API, enrichment by scraper.** Both registries offer public APIs,
+so that is how they are read: structured, and nothing to break when a site is
+redesigned. Scraping still has a job, a different one. Registry records are
+often thin about who was enrolled and the detail sits in the linked full text,
+so those records are marked and fetched with Firecrawl or Playwright before
+extraction.
 
-**Scores are explainable, deliberately.** Matching is weighted keyword and
-discipline overlap rather than embeddings. Someone deciding whether to spend
-three weeks on an application needs to know *why* a call surfaced, and a cosine
-distance cannot tell them. Every point traces to a sentence shown in the UI
-([`match.ts`](src/lib/pipeline/match.ts)). Embeddings are the right upgrade for
-recall once the corpus is large enough that keyword overlap starts missing
-things. The interface would not change, only the body of that function.
+**Gap scoring is arithmetic, not a model.** A number that decides where a
+research organisation spends a year of fieldwork has to be defensible line by
+line, so every input in [`gaps.ts`](src/lib/pipeline/gaps.ts) is a count someone
+can recheck against the rows. A partial cohort counts for half, stated in the
+code rather than buried, because being 4% of a European trial is not the same as
+being the population it was powered for.
 
-**Both stores share one comparator.** Postgres cannot express "closed last, then
-soonest deadline, then undated" in one index-friendly `ORDER BY`, and having the
-two stores disagree about row order is exactly the bug that only appears in a
-demo. Pages are capped at a few hundred rows, so both fetch and then sort through
-[`ordering.ts`](src/lib/db/ordering.ts).
+**Both stores share one comparator.** Having the JSON store and Supabase
+disagree about row order is the kind of bug that only shows up in a demo, so
+both fetch and then sort through [`ordering.ts`](src/lib/db/ordering.ts).
 
 ## Background jobs and webhooks
 
 | Trigger | Path | Auth | Does |
 | --- | --- | --- | --- |
-| Nightly | [`ingest.yml`](.github/workflows/ingest.yml) | repo secrets | Full crawl, Chromium available, no time cap |
+| Nightly | [`ingest.yml`](.github/workflows/ingest.yml) | repo secrets | Full run, Chromium available, no time cap |
 | Daily | `GET /api/cron/ingest` | `Bearer $CRON_SECRET` | Bounded slice within the 60s function limit |
-| On demand | `POST /api/webhooks/refresh` | HMAC-SHA256 | Targeted re-crawl |
+| On demand | `POST /api/webhooks/refresh` | HMAC-SHA256 | Targeted re-run |
 
 The heavy work runs in GitHub Actions because a serverless function is the wrong
 place for a multi-source crawl. Both paths call the same `runIngest`, so there is
@@ -114,7 +139,7 @@ rejects anything more than five minutes old. The timestamp sits *inside* the
 signed payload, so a captured request cannot be replayed with a fresh one.
 
 ```bash
-BODY='{"sources":["ukri"],"force":true}'
+BODY='{"conditions":["tuberculosis"],"force":true}'
 TS=$(date +%s000)
 SIG=$(printf '%s.%s' "$TS" "$BODY" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" -hex | sed 's/^.* //')
 curl -X POST localhost:3000/api/webhooks/refresh \
@@ -125,95 +150,101 @@ curl -X POST localhost:3000/api/webhooks/refresh \
 ## Evaluation
 
 `npm run eval` scores an extractor against
-[hand-labelled fixtures](evals/labels.json), field by field, so "the model beats
+[hand-labelled records](evals/labels.json), field by field, so "the model beats
 the baseline" becomes a number rather than a claim. Both extractors see the same
-pages and the same grader. The eval imports the pipeline's own accept thresholds
-instead of restating them, because an eval that grades a different accept path
-measures a system nobody is running.
+records and the same grader, and the eval imports the pipeline's own accept
+thresholds instead of restating them, because an eval that grades a different
+accept path measures a system nobody is running.
 
 The checked-in baseline (`npm run eval:baseline`, rule-based, no API key):
 
 ```
-  field         score
-  ─────────────────────────────────────────────
-  award         █████████████████···  83%
-  deadline      ████████████████████ 100%
-  disciplines   ██████████████████··  92%
-  funder        █████████████████···  83%
-  status        ████████████████████ 100%
-  summary       ████████████████████ 100%
-  ─────────────────────────────────────────────
-  overall       ███████████████████·  93%
+  field           score
+  ───────────────────────────────────────────────
+  condition       ██████████████████··  92%
+  countries       ████████████████····  78%
+  representation  ███████████████·····  77%  <- the field the analysis rests on
+  sample_size     ████████████████████ 100%
+  study_type      ██████████████████··  92%
+  year            ████████████████████ 100%
+  ───────────────────────────────────────────────
+  overall         ██████████████████··  90%
 
-  pages: 6 graded · 1 hallucinated
+  clinicaltrials  overall  98% · representation 100%
+  europepmc       overall  70% · representation  25%
 ```
 
-Grading choices worth knowing. Funders are graded on identity rather than string
-equality, so "NSF" scores against "National Science Foundation". Disciplines use
-set F1, which rewards recall without letting a scattergun win. Award min and max
-score separately, because reading the ceiling but missing the floor is a partial
-success. Amounts pass within 1%. Summary prose is only checked for presence,
-since grading its quality needs a judge model and pretending otherwise would be
-dishonest arithmetic.
+**That per-source split is the whole finding.** 90% overall is a flattering
+average of two completely different results. On ClinicalTrials.gov, where
+recruitment countries arrive in a labelled field, pattern matching is perfect.
+On Europe PMC, where the population exists only in prose, it gets
+representation right one time in four.
 
-**What the eval found.** 93% flatters the baseline, because the interesting
-failures are the ones a single number hides.
+Three cases show why:
 
-- **It cannot tell a directory from a call.** Given NSF's "Find Funding" index
-  page at 1,500 characters, with no length gate to save it, the baseline
-  confidently emits a record titled *Find Funding*. Nothing in a regex can
-  separate "this page lists opportunities" from "this page is one".
-- **It reads the programme budget as the award ceiling.** On the CISE fixture it
-  returns `$250k to $95M`. That $95M is what NSF awards in total across roughly
-  180 grants. Telling those apart means reading the sentence, not the number.
-- **It gives up on funders it has not been told about.** `Unknown funder` on the
-  Wellcome archive page, because the name appears in a form the pattern list does
-  not carry.
+- **"Medicare Advantage and Type 2 Diabetes Outcomes."** The country is never
+  named. It has to be inferred from *Medicare* and *44 states*. The baseline
+  returns "not reported"; the answer is the United States. No regex reaches this.
+- **A systematic review of undiagnosed diabetes across South Asia.** The
+  population is the region itself, with no single country to match on. The
+  baseline sees a passing mention and says "partial"; it is "primary".
+- **A cross-sectional study of drug allergy in Sri Lanka**, captured under a
+  diabetes query. Getting this right means reporting the condition the paper
+  studied rather than the one we searched for.
 
-Those three are the argument for the model's cost, stated as measurements. Run
-`npm run eval` with a `GEMINI_API_KEY` set and the reports in `evals/reports/`
-are directly diffable.
+Representation confusions are counted by direction, because they are not
+equally bad. Calling a silent record a measured absence invents a gap; the
+reverse is merely conservative. The baseline errs conservative, which is the
+right direction to err in.
+
+Run `npm run eval` with a `GEMINI_API_KEY` set and the reports in
+`evals/reports/` are directly diffable.
 
 ## Tests
 
 ```bash
-npm test        # 52 tests
+npm test        # 73 tests
 npm run typecheck
 ```
 
 Covering JSON salvage (fences, prose, trailing commas, braces inside strings),
-the repair loop against a scripted client, HTML normalisation, id and hash
-stability, scoring behaviour at the deadline and confidence edges, and result
-ordering. CI additionally runs the full pipeline on fixtures and asserts it stored
-something coherent, so a refactor that quietly breaks extraction fails the build
-rather than the next crawl.
+the repair loop against a scripted client, the gap arithmetic at its edges, the
+unclear/none split, id and hash stability, condition normalisation, and result
+ordering. Two of these exist because they caught real bugs: the gap score used
+to return maximum when nothing had reported, and the dashboard used to label
+conditions with their alphabetised sort key ("2 diabetes type").
 
 ## Known limits
 
-- **Seven labelled pages is a smoke test, not a benchmark.** The harness is real.
-  The sample is small enough that one page moves a field score by 17 points.
-  Scaling to roughly 50 labelled live pages is next, and that is a labelling
-  problem rather than an engineering one.
-- **Summary quality is unmeasured.** The grader checks that a summary exists.
-  Scoring whether it is accurate needs a judge model, which is the natural second
-  use of the LLM budget.
-- **Scoring has no learning signal.** Match weights are hand-set. Click-through or
-  saved-opportunity data would let them be fitted rather than guessed.
-- **Three sources.** The registry is built to grow. The crawl budget and the
-  free-tier ceilings are what actually cap it.
-- **Fixtures are synthetic.** They are written to exercise the edges: a closed
-  archive, a rolling call, a two-date solicitation, an index page. They are not
-  scraped from the funders. Real pages are messier, and the eval numbers will drop
-  when they meet them.
+- **Thirteen labelled records is a smoke test, not a benchmark.** The harness is
+  real; the sample is small enough that one record moves a field score by 8
+  points. Scaling the labels is the next thing worth doing, and it is a
+  labelling problem rather than an engineering one.
+- **The condition taxonomy is string normalisation, not ontology.** It folds
+  "Diabetes Mellitus, Type 2" into "type 2 diabetes", and it does not know that
+  "pulmonary tuberculosis" is a kind of tuberculosis. Mapping to MeSH or SNOMED
+  is the real answer.
+- **The rule-based baseline fragments conditions badly.** With no labelled field
+  to read, it takes a paper's title as its condition, producing a long tail of
+  conditions seen once. The dashboard excludes those from the ranking and says
+  how many it excluded.
+- **Sample sizes are as reported.** No attempt is made to reconcile a registry's
+  planned enrollment with what a paper says was analysed.
+- **Two sources.** WHO ICTRP and the national registries would widen it
+  considerably; the source interface is built for it. The more interesting
+  addition is neural search over work published in regional journals that
+  neither API indexes, which is exactly the material most likely to be missing
+  from a coverage estimate built only from PubMed.
 
 ## Stack
 
 Next.js 16 · React · TypeScript (strict, `noUncheckedIndexedAccess`) ·
-Tailwind v4 · Supabase (Postgres + RLS) · Zod · Playwright · Firecrawl · Exa ·
+Tailwind v4 · Supabase (Postgres + RLS) · Zod · Playwright · Firecrawl ·
 Gemini / Groq / OpenRouter · GitHub Actions · Vercel
 
 ---
 
-Extracted data can be wrong. The UI shows extraction confidence and a link back
-to the source page on every record, because a tool like this is only useful if it
-tells you when to double-check it.
+Every field on the dashboard was extracted from a source record by a language
+model and may be wrong. Each study links back to the record it came from, and
+extraction confidence is shown on every row, because a tool like this is only
+useful if it tells you when to check it.

@@ -45,7 +45,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "bad signature" }, { status: 401 });
   }
 
-  let body: { sources?: string[]; force?: boolean; budget?: number } = {};
+  let body: { sources?: string[]; conditions?: string[]; force?: boolean; budget?: number } = {};
   if (raw.trim()) {
     try {
       body = JSON.parse(raw) as typeof body;
@@ -60,14 +60,16 @@ export async function POST(req: Request): Promise<NextResponse> {
   const run = await runIngest({
     trigger: "webhook",
     sources: body.sources,
+    conditions: body.conditions,
     force: body.force ?? false,
     budget: Math.min(body.budget ?? 8, 15),
   });
 
   return NextResponse.json({
     run_id: run.id,
-    fetched: run.pages_fetched,
-    skipped: run.pages_skipped,
+    seen: run.records_seen,
+    skipped: run.records_skipped,
+    enriched: run.enriched,
     extracted: run.extracted,
     rejected: run.rejected,
     errors: run.errors.slice(0, 5),

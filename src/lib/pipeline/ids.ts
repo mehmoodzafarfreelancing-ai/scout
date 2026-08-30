@@ -1,18 +1,18 @@
 import { createHash } from "node:crypto";
 
-/** Stable row id: same URL always maps to the same row across runs. */
-export function opportunityId(source: string, url: string): string {
-  const canonical = url.replace(/^https?:\/\//, "").replace(/\/$/, "").toLowerCase();
+/** Stable row id: the same source record always maps to the same row. */
+export function studyId(source: string, ref: string): string {
+  const canonical = ref.trim().toLowerCase();
   return `${source}_${createHash("sha256").update(canonical).digest("hex").slice(0, 16)}`;
 }
 
 /**
- * Hash of the page's meaningful content.
+ * Hash of the record's meaningful content.
  *
  * Whitespace and digit-only churn (view counters, "last updated" stamps) would
- * otherwise make every page look changed on every crawl and burn the entire
- * LLM budget re-extracting text that is identical. Normalising both out means
- * a stable page costs one fetch and zero tokens.
+ * otherwise make every record look changed on every run and burn the entire
+ * LLM budget re-extracting text that is identical. Normalising both out means a
+ * stable record costs one API read and zero tokens.
  */
 export function contentHash(text: string): string {
   const normalised = text
