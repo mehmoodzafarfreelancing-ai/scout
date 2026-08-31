@@ -40,13 +40,25 @@ Rules:
   Karachi recruited in Denmark.
 - "representation" describes South Asian populations, meaning Pakistan, India,
   Bangladesh, Sri Lanka, Nepal, Bhutan, the Maldives, or a diaspora cohort
-  explicitly identified as South Asian:
-    "primary"  the study population is mainly South Asian
-    "partial"  South Asian participants are included within a larger cohort
-    "none"     the record states a population and it is not South Asian
-    "unclear"  the record does not say who was enrolled
-  Use "unclear" rather than "none" whenever the record is silent. Those are
-  opposite findings and treating silence as absence corrupts the whole analysis.
+  explicitly identified as South Asian.
+
+  Decide it mechanically from "countries", which you have already filled in:
+    countries is non-empty and ALL of them are South Asian  -> "primary"
+    countries is non-empty and SOME of them are South Asian -> "partial"
+    countries is non-empty and NONE of them are South Asian -> "none"
+    countries is empty                                      -> "unclear"
+
+  Two clarifications, because both are easy to get wrong:
+  * A record that names where it recruited has told you who was enrolled. A
+    trial recruiting only in Denmark is "none", not "unclear". You do not need
+    the record to discuss ethnicity; the recruiting location is the answer.
+  * A review or synthesis whose stated scope is South Asia is "primary", even
+    though it recruited nobody itself.
+
+  "unclear" is reserved for records that give no location and no population at
+  all, such as a narrative review of a drug class. Silence and a stated
+  non-South-Asian population are opposite findings, and treating one as the
+  other corrupts the whole analysis.
 - "sample_size" is enrolled participants. Null if not stated.
 - "condition" should be the common clinical name, lower case, no abbreviation.
 - "confidence" is your own probability (0-1) that this is a real study record

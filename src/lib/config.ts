@@ -59,12 +59,18 @@ export const config = {
     /**
      * Free-tier friendly defaults. Override per provider if you have quota.
      *
-     * All three have a free tier that does not bill. The prices below are the
-     * paid-tier rates, used only to put a number on a run so nobody has to
-     * guess what a crawl cost. Update them if the published rates change.
+     * Gemini is a comma-separated chain rather than one name, because both
+     * failure modes showed up within a minute of each other on a fresh key.
+     * A pinned `gemini-2.5-flash` returned "no longer available to new users":
+     * still listed by the API, closed to new accounts. The `gemini-flash-latest`
+     * alias that replaced it returned 503 for high demand. One name cannot
+     * survive both. The chain leads with the alias so it does not rot, backs
+     * onto a known-good version, then onto Lite. Set GEMINI_MODEL to a single
+     * name to pin it when reproducibility matters more than availability.
      */
     model: {
-      gemini: env("GEMINI_MODEL") ?? "gemini-2.5-flash",
+      // A chain, tried in order. See GeminiClient for why.
+      gemini: env("GEMINI_MODEL") ?? "gemini-flash-latest,gemini-3.5-flash,gemini-flash-lite-latest",
       groq: env("GROQ_MODEL") ?? "llama-3.3-70b-versatile",
       openrouter: env("OPENROUTER_MODEL") ?? "meta-llama/llama-3.3-70b-instruct:free",
     },
