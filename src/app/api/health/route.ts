@@ -34,8 +34,28 @@ const EXPECTED = [
   "CRON_SECRET",
 ] as const;
 
-/** Words that should only ever appear inside a name on the list above. */
-const FAMILIAR = ["SUPABASE", "SUPA", "GEMINI", "GROQ", "OPENROUTER", "FIRECRAWL", "WEBHOOK", "CRON"];
+/**
+ * Fragments short enough to survive a typo.
+ *
+ * The first version of this matched on "SUPABASE" and "SUPA", which misses the
+ * most likely misspelling of all: SUPBASE, where the transposed letter breaks
+ * both. Matching on stems that a single wrong keystroke cannot destroy is the
+ * point, since a detector that only catches correctly spelled names catches
+ * nothing worth catching.
+ */
+const FAMILIAR = [
+  "SUP",
+  "ANON",
+  "SERVICE_ROLE",
+  "GEMI",
+  "GROQ",
+  "OPENROUT",
+  "FIRECRAW",
+  "WEBHOOK",
+  "CRON",
+  "LLM",
+  "SCRAPE",
+];
 
 export async function GET(): Promise<NextResponse> {
   const present: Record<string, boolean> = {};
