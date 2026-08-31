@@ -13,16 +13,16 @@ export default async function RunsPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Ingest runs</h1>
         <p className="mt-1 max-w-2xl text-sm" style={{ color: "var(--text-dim)" }}>
-          Every crawl is recorded with the providers it used and what it did with each page. When a
-          funder redesigns their site the rejection count moves first, which is the signal that a
-          source adapter needs attention.
+          Every run is recorded with the providers it used, what it did with each record, and what
+          it cost. When a registry changes its response shape the rejection count moves first,
+          which is the signal that a source adapter needs attention.
         </p>
       </div>
 
       {runs.length === 0 ? (
         <Empty
           title="No runs recorded"
-          hint="Trigger one with `npm run ingest:fixtures`, or POST to /api/webhooks/refresh with a valid signature."
+          hint="Trigger one with `npm run seed:store` for a free run from captured records, or POST to /api/webhooks/refresh with a valid signature."
         />
       ) : (
         <div

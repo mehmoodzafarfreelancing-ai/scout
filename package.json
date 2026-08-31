@@ -14,7 +14,8 @@
     "test": "tsx --test \"src/**/*.test.ts\"",
     "eval": "tsx src/scripts/eval.ts",
     "eval:baseline": "cross-env LLM_PROVIDER=mock tsx src/scripts/eval.ts",
-    "capture": "tsx src/scripts/capture.ts"
+    "capture": "tsx src/scripts/capture.ts",
+    "seed:store": "cross-env SCRAPE_PROVIDER=fixture LLM_PROVIDER=mock tsx src/scripts/ingest.ts --budget=400 --per=40"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",

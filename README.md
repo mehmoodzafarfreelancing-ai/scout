@@ -4,7 +4,7 @@ Reads study records from ClinicalTrials.gov and Europe PMC, uses an LLM to work
 out which population was actually recruited, and ranks health conditions by how
 much evidence exists against how little of it reached South Asia.
 
-**Live demo:** _add your Vercel URL here_
+**Live demo:** https://scout-dusky-seven.vercel.app
 
 ```
 ClinicalTrials.gov ─┐
@@ -51,8 +51,13 @@ and it stays on the fallback.
 
 ```bash
 cp .env.example .env.local   # every entry is optional
-npm run ingest               # provider selection is automatic
+npm run seed:store           # load the captured records into whatever store is configured
+npm run ingest               # live registries + real model. Provider selection is automatic
 ```
+
+`seed:store` exists because populating a database should not require spending
+tokens. It runs the full pipeline against the captured records with the
+rule-based extractor, so a fresh Supabase project gets 141 rows for nothing.
 
 The running app shows which providers are live in its header, so a demo that
 behaves oddly tells you why without opening a terminal.

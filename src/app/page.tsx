@@ -60,7 +60,7 @@ export default async function Home() {
       {studies.length === 0 ? (
         <Empty
           title="Nothing ingested yet"
-          hint="Run `npm run ingest:fixtures` for the offline demo, or add a GEMINI_API_KEY and run `npm run ingest` to pull live records."
+          hint="No studies in this store yet. Run `npm run seed:store` to load the captured records for free, or `npm run ingest` with a GEMINI_API_KEY to pull live ones."
         />
       ) : (
         <>
