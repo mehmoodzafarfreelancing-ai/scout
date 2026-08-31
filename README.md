@@ -161,14 +161,17 @@ records and the same grader, and the eval imports the pipeline's own accept
 thresholds instead of restating them, because an eval that grades a different
 accept path measures a system nobody is running.
 
-The checked-in baseline (`npm run eval:baseline`, rule-based, no API key):
+Three runs, in the order they happened. The story between them is more useful
+than any single number.
+
+**1. The rule-based baseline** (`npm run eval:baseline`, no API key):
 
 ```
   field           score
   ───────────────────────────────────────────────
   condition       ██████████████████··  92%
   countries       ████████████████····  78%
-  representation  ███████████████·····  77%  <- the field the analysis rests on
+  representation  ███████████████·····  77%
   sample_size     ████████████████████ 100%
   study_type      ██████████████████··  92%
   year            ████████████████████ 100%
@@ -179,31 +182,71 @@ The checked-in baseline (`npm run eval:baseline`, rule-based, no API key):
   europepmc       overall  70% · representation  25%
 ```
 
-**That per-source split is the whole finding.** 90% overall is a flattering
-average of two completely different results. On ClinicalTrials.gov, where
-recruitment countries arrive in a labelled field, pattern matching is perfect.
-On Europe PMC, where the population exists only in prose, it gets
-representation right one time in four.
+**That per-source split is the first finding, and 90% hides it.** Where
+recruitment countries arrive in a labelled field, pattern matching is close to
+perfect. Where the population exists only in prose, it gets the field that
+matters right one time in four.
 
-Three cases show why:
+**2. Gemini 3.5 Flash, first attempt:** 96% overall. Europe PMC went from 70% to
+95%, exactly as expected. But representation did not move at all, still 77%, and
+all three misses had the same shape:
 
-- **"Medicare Advantage and Type 2 Diabetes Outcomes."** The country is never
-  named. It has to be inferred from *Medicare* and *44 states*. The baseline
-  returns "not reported"; the answer is the United States. No regex reaches this.
-- **A systematic review of undiagnosed diabetes across South Asia.** The
-  population is the region itself, with no single country to match on. The
-  baseline sees a passing mention and says "partial"; it is "primary".
-- **A cross-sectional study of drug allergy in Sri Lanka**, captured under a
-  diabetes query. Getting this right means reporting the condition the paper
-  studied rather than the one we searched for.
+```
+  clinicaltrials/NCT06186102   countries: Denmark        ✓
+                               representation: unclear   ✗  (should be none)
+  clinicaltrials/NCT01947595   countries: Germany        ✓
+                               representation: unclear   ✗  (should be none)
+  europepmc/42573997           countries: United States  ✓
+                               representation: unclear   ✗  (should be none)
+```
 
-Representation confusions are counted by direction, because they are not
-equally bad. Calling a silent record a measured absence invents a gap; the
-reverse is merely conservative. The baseline errs conservative, which is the
-right direction to err in.
+The model read every country correctly, including inferring the United States
+from *Medicare* and *44 states*, then refused to conclude anything from it.
+That is not a reading failure. The prompt defined `unclear` as "the record does
+not say who was enrolled" and never said that naming a recruiting country
+answers that question. **The eval found a bug in the prompt, not in the model.**
 
-Run `npm run eval` with a `GEMINI_API_KEY` set and the reports in
-`evals/reports/` are directly diffable.
+**3. After making representation mechanical** (decide it from the countries
+already extracted, with the two ambiguous cases spelled out):
+
+```
+  field           score
+  ───────────────────────────────────────────────
+  condition       ████████████████████ 100%
+  countries       ████████████████████ 100%
+  representation  ████████████████████ 100%
+  sample_size     ████████████████████ 100%
+  study_type      ████████████████████ 100%
+  year            ████████████████████ 100%
+  ───────────────────────────────────────────────
+  overall         ████████████████████ 100%
+
+  12 of 13 records graded · 1 request timed out
+  model: gemini-flash-lite-latest
+```
+
+**Read that last line before reading the score.** Both stronger models in the
+chain were returning 503 at the time, so this was the *cheapest* model
+available, and once the definition was unambiguous it got every field right.
+The prompt was worth more than the model.
+
+### What these numbers do not mean
+
+100% on twelve records does not mean extraction is solved. It means **the eval
+has stopped being informative and needs harder cases.** Thirteen labelled
+records was always a smoke test. The honest reading is that the obvious failure
+modes are fixed and the next one has not been found yet, which is a reason to
+grow the label set rather than to celebrate.
+
+The timeout matters too: one record never got an answer, and a run that scores
+100% on what it managed to grade is not the same as a run that graded
+everything.
+
+Error direction is tracked separately, because the two are not equally bad.
+Calling a silent record a measured absence invents a gap; the reverse merely
+declines to assert one. Both extractors err in the conservative direction.
+
+Reports land in `evals/reports/<provider>.json` and are directly diffable.
 
 ## Tests
 
@@ -221,10 +264,10 @@ conditions with their alphabetised sort key ("2 diabetes type").
 
 ## Known limits
 
-- **Thirteen labelled records is a smoke test, not a benchmark.** The harness is
-  real; the sample is small enough that one record moves a field score by 8
-  points. Scaling the labels is the next thing worth doing, and it is a
-  labelling problem rather than an engineering one.
+- **Thirteen labelled records is a smoke test, not a benchmark.** One record
+  moves a field score by 8 points, and the current extractor scores 100% on
+  them, which means the set has stopped finding failures. Growing it is the next
+  thing worth doing and it is a labelling problem, not an engineering one.
 - **The condition taxonomy is string normalisation, not ontology.** It folds
   "Diabetes Mellitus, Type 2" into "type 2 diabetes", and it does not know that
   "pulmonary tuberculosis" is a kind of tuberculosis. Mapping to MeSH or SNOMED
