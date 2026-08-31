@@ -4,6 +4,7 @@ loadEnv();
 // Imported after loadEnv() so config.ts reads a populated process.env.
 const { runIngest } = await import("@/lib/pipeline/run");
 const { activeStack } = await import("@/lib/config");
+const { estimateCost, formatCost } = await import("@/lib/pipeline/cost");
 
 function flag(name: string): string | undefined {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
@@ -36,6 +37,10 @@ console.log(
     `  enriched   ${run.enriched}  (full text fetched for thin records)`,
     `  extracted  ${run.extracted}`,
     `  rejected   ${run.rejected}`,
+    "",
+    `  llm calls  ${run.llm_calls}`,
+    `  tokens     ${run.input_tokens.toLocaleString()} in · ${run.output_tokens.toLocaleString()} out`,
+    `  cost       ${formatCost(estimateCost(run))}  (paid-tier equivalent; free tier bills nothing)`,
     "",
   ].join("\n"),
 );

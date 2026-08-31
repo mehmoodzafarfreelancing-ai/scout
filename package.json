@@ -10,7 +10,7 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "ingest": "tsx src/scripts/ingest.ts",
-    "ingest:fixtures": "cross-env SCRAPE_PROVIDER=fixture LLM_PROVIDER=mock tsx src/scripts/ingest.ts --budget=400 --per=40",
+    "ingest:fixtures": "cross-env SCRAPE_PROVIDER=fixture LLM_PROVIDER=mock NEXT_PUBLIC_SUPABASE_URL= NEXT_PUBLIC_SUPABASE_ANON_KEY= tsx src/scripts/ingest.ts --budget=400 --per=40",
     "test": "tsx --test \"src/**/*.test.ts\"",
     "eval": "tsx src/scripts/eval.ts",
     "eval:baseline": "cross-env LLM_PROVIDER=mock tsx src/scripts/eval.ts",

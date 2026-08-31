@@ -1,5 +1,10 @@
--- Scout schema. Run once in the Supabase SQL editor.
--- Safe to re-run: every statement is idempotent.
+-- Scout schema. Run in the Supabase SQL editor.
+--
+-- Safe to re-run at any time. `create table if not exists` alone is not enough:
+-- it silently does nothing when the table already exists, so a table created by
+-- an older version of this file would never gain a new column. The `alter table
+-- ... add column if not exists` block at the bottom is what actually makes this
+-- a migration rather than a one-shot.
 
 create extension if not exists pg_trgm;
 
@@ -70,6 +75,9 @@ create table if not exists ingest_runs (
   enriched        int         not null default 0,
   extracted       int         not null default 0,
   rejected        int         not null default 0,
+  llm_calls       int         not null default 0,
+  input_tokens    bigint      not null default 0,
+  output_tokens   bigint      not null default 0,
   errors          text[]      not null default '{}'
 );
 create index if not exists ingest_runs_started_idx on ingest_runs (started_at desc);
@@ -92,3 +100,17 @@ begin
     create policy "public read" on ingest_runs for select using (true);
   end if;
 end $$;
+
+-- ── Migrations ───────────────────────────────────────────────────────────────
+-- Additive only, and each one is a no-op on a fresh database. Anything that
+-- needs to drop or rewrite a column goes in a dated migration of its own, not
+-- here, because this file is expected to be safe to run without thinking.
+
+-- 2026-08-30: per-run token accounting, so a run can report what it cost.
+alter table ingest_runs add column if not exists llm_calls     int    not null default 0;
+alter table ingest_runs add column if not exists input_tokens  bigint not null default 0;
+alter table ingest_runs add column if not exists output_tokens bigint not null default 0;
+
+-- 2026-08-30: normalised condition key, written by the app on every upsert.
+alter table studies add column if not exists condition_key text not null default '';
+create index if not exists studies_condition_idx on studies (condition_key);

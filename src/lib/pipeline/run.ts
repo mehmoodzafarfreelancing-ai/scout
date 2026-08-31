@@ -55,6 +55,9 @@ export async function runIngest(opts: RunOptions): Promise<IngestRun> {
     enriched: 0,
     extracted: 0,
     rejected: 0,
+    llm_calls: 0,
+    input_tokens: 0,
+    output_tokens: 0,
     errors: [],
   };
   await repo.startRun(run);
@@ -142,6 +145,13 @@ export async function runIngest(opts: RunOptions): Promise<IngestRun> {
               text,
               url: doc.url,
             });
+
+            // Counted whether or not the extraction validated, because a
+            // rejected record still cost tokens. A spend figure that only
+            // counts successes understates the bill.
+            run.llm_calls += result.meta.attempts;
+            run.input_tokens += result.meta.usage?.input ?? 0;
+            run.output_tokens += result.meta.usage?.output ?? 0;
 
             if (!result.ok) {
               run.rejected++;

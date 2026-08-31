@@ -1,4 +1,5 @@
 import { getRepo } from "@/lib/db";
+import { estimateCost, formatCost } from "@/lib/pipeline/cost";
 import { Empty } from "../ui";
 
 export const dynamic = "force-dynamic";
@@ -42,6 +43,7 @@ export default async function RunsPage() {
                 <th className="px-4 py-2.5 text-right font-medium">Enriched</th>
                 <th className="px-4 py-2.5 text-right font-medium">Extracted</th>
                 <th className="px-4 py-2.5 text-right font-medium">Rejected</th>
+                <th className="px-4 py-2.5 text-right font-medium">Cost</th>
                 <th className="px-4 py-2.5 text-right font-medium">Took</th>
               </tr>
             </thead>
@@ -79,6 +81,13 @@ export default async function RunsPage() {
                       title={r.errors.slice(0, 5).join("\n") || undefined}
                     >
                       {r.rejected}
+                    </td>
+                    <td
+                      className="nums px-4 py-3 text-right"
+                      style={{ color: "var(--text-dim)" }}
+                      title={`${r.input_tokens.toLocaleString()} in · ${r.output_tokens.toLocaleString()} out · ${r.llm_calls} calls`}
+                    >
+                      {formatCost(estimateCost(r))}
                     </td>
                     <td className="nums px-4 py-3 text-right" style={{ color: "var(--text-dim)" }}>
                       {seconds === null ? "running…" : `${seconds.toFixed(1)}s`}

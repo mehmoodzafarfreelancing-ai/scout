@@ -120,6 +120,10 @@ export const IngestRun = z.object({
   enriched: z.number(),
   extracted: z.number(),
   rejected: z.number(),
+  /** What this run actually spent. Null when the provider reports no usage. */
+  llm_calls: z.number(),
+  input_tokens: z.number(),
+  output_tokens: z.number(),
   errors: z.array(z.string()),
 });
 export type IngestRun = z.infer<typeof IngestRun>;

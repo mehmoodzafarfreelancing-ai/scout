@@ -56,13 +56,26 @@ export const config = {
     geminiKey: env("GEMINI_API_KEY"),
     groqKey: env("GROQ_API_KEY"),
     openrouterKey: env("OPENROUTER_API_KEY"),
-    /** Free-tier friendly defaults. Override per provider if you have quota. */
+    /**
+     * Free-tier friendly defaults. Override per provider if you have quota.
+     *
+     * All three have a free tier that does not bill. The prices below are the
+     * paid-tier rates, used only to put a number on a run so nobody has to
+     * guess what a crawl cost. Update them if the published rates change.
+     */
     model: {
-      gemini: env("GEMINI_MODEL") ?? "gemini-2.0-flash",
+      gemini: env("GEMINI_MODEL") ?? "gemini-2.5-flash",
       groq: env("GROQ_MODEL") ?? "llama-3.3-70b-versatile",
       openrouter: env("OPENROUTER_MODEL") ?? "meta-llama/llama-3.3-70b-instruct:free",
     },
   },
+  /** USD per million tokens, paid tier. Used for the run cost estimate only. */
+  pricing: {
+    gemini: { input: 0.3, output: 2.5 },
+    groq: { input: 0, output: 0 },
+    openrouter: { input: 0, output: 0 },
+    mock: { input: 0, output: 0 },
+  } as Record<string, { input: number; output: number }>,
   scrape: {
     provider: resolveScrape(),
     firecrawlKey: env("FIRECRAWL_API_KEY"),
