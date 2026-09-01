@@ -98,6 +98,11 @@ export default async function Home() {
               </Link>
             </div>
 
+            <p className="text-xs" style={{ color: "var(--text-dim)" }}>
+              The number beside each condition is its gap score, 0 to 1. Higher means more
+              evidence exists and less of it reached the region.
+            </p>
+
             <ul className="space-y-2">
               {gaps.map((gap) => (
                 <li
